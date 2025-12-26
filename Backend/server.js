@@ -1,62 +1,49 @@
+import 'dotenv/config';
 import express from 'express';
-import mysql from 'mysql2/promise';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3333);
+const host = '0.0.0.0';
 const distDir = path.join(__dirname, '..', 'dist');
 
 /* =========================
    ENV / DB CONFIG
 ========================= */
-const DB_DATABASE = process.env.DB_DATABASE || process.env.DB_NAME || 'propostas-winove';
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = Number(process.env.DB_PORT || 3306);
-const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
-const DB_PASS = process.env.DB_PASSWORD ?? process.env.DB_PASS;
-
-if (!DB_USER) throw new Error('DB_USERNAME/DB_USER não definido no ambiente.');
-if (DB_PASS === undefined) throw new Error('DB_PASSWORD/DB_PASS não definido no ambiente.');
-
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 
-if (!JWT_SECRET) throw new Error('JWT_SECRET não definido no ambiente (Plesk).');
+const missingEnv = [...missingDbEnv];
+if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
+
+if (missingEnv.length > 0) {
+  console.warn(`[WARN] Variáveis de ambiente ausentes: ${missingEnv.join(', ')}.`);
+}
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-const dbPool = mysql.createPool({
-  host: DB_HOST,
-  port: DB_PORT,
-  user: DB_USER,
-  password: DB_PASS,
-  database: DB_DATABASE,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
-
 /* =========================
    HELPERS (resposta padrão)
 ========================= */
-const ok = (res, payload, status = 200) => res.status(status).json({ payload });
+const ok = (res, data, status = 200) => res.status(status).json({ data });
 const fail = (res, status, error, details = undefined) =>
-  res.status(status).json({ error, details, payload: null });
+  res.status(status).json({ error, details, data: null });
 
 const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
 const safeQuery = async (sql, params = []) => {
+  if (!dbPool) {
+    throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
+  }
   const [rows] = await dbPool.execute(sql, params);
   return rows;
 };
@@ -86,8 +73,11 @@ const serializeJsonArray = (value) => {
 const isBcryptHash = (v = '') =>
   v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$');
 
-const signToken = (user) =>
-  jwt.sign(
+const signToken = (user) => {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET não definido no ambiente.');
+  }
+  return jwt.sign(
     {
       sub: user.id,
       email: user.email,
@@ -97,6 +87,27 @@ const signToken = (user) =>
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
+};
+
+const requireAuth = (req, res, next) => {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (!token || scheme?.toLowerCase() !== 'bearer') {
+    return fail(res, 401, 'Token ausente.');
+  }
+
+  if (!JWT_SECRET) {
+    return fail(res, 500, 'JWT_SECRET não definido no ambiente.');
+  }
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (error) {
+    return fail(res, 403, 'Token inválido ou expirado.');
+  }
+};
 
 /* =========================
    RELATIONS (proposals)
@@ -197,7 +208,7 @@ const loginHandler = async (req, res) => {
 
     const token = signToken(user);
 
-    // ✅ PADRÃO para o front: sempre payload
+    // ✅ PADRÃO para o front: sempre data
     return ok(res, { token, user: sanitizeUser(user) });
   } catch (error) {
     console.error('AUTH_LOGIN_ERROR:', error);
@@ -218,7 +229,7 @@ const registerHandler = async (req, res) => {
 
     if (!name || !email || !cnpjAccess || !password) {
       console.warn('❌ Dados ausentes');
-      return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
+      return fail(res, 400, 'Dados obrigatórios ausentes.');
     }
 
     const cnpjNormalized = normalizeCnpj(cnpjAccess);
@@ -230,7 +241,7 @@ const registerHandler = async (req, res) => {
 
     if (existing.length > 0) {
       console.warn('⚠️ Email já cadastrado:', email);
-      return res.status(409).json({ error: 'E-mail já cadastrado.' });
+      return fail(res, 409, 'E-mail já cadastrado.');
     }
 
     const id = crypto.randomUUID();
@@ -251,29 +262,36 @@ const registerHandler = async (req, res) => {
 
     console.log('✅ Usuário criado com sucesso:', email);
 
-    return res.status(201).json({
-      ok: true,
-      user: {
-        id,
-        name,
-        email,
-        cnpj_access: cnpjNormalized,
-        role: 'employee',
-      },
-    });
+    const user = {
+      id,
+      name,
+      email,
+      cnpj_access: cnpjNormalized,
+      role: 'employee',
+    };
+    const token = signToken(user);
+
+    return ok(res, { user, token }, 201);
   } catch (error) {
     console.error('🔥 ERRO NO REGISTER:', error);
-    return res.status(500).json({
-      error: 'Erro interno ao registrar.',
-      detail: error.message,
-    });
+    return fail(res, 500, 'Erro interno ao registrar.', error.message);
   }
 };
+
+app.post('/auth/login', loginHandler);
+app.post('/auth/register', registerHandler);
+
+app.use('/api', requireAuth);
 
 /* =========================
    HEALTH
 ========================= */
+const healthHandler = (_req, res) => ok(res, { ok: true });
+
 const healthDbHandler = async (_req, res) => {
+  if (!dbPool) {
+    return fail(res, 503, 'Banco de dados não configurado.');
+  }
   try {
     const [rows] = await dbPool.query('SELECT DATABASE() AS db');
     return ok(res, { ok: true, db: rows?.[0]?.db });
@@ -283,6 +301,8 @@ const healthDbHandler = async (_req, res) => {
   }
 };
 
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
@@ -307,7 +327,7 @@ app.get('/api/tables', async (_req, res) => {
 app.get('/api/companies', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM companies ORDER BY name ASC');
-    return ok(res, { data: rows });
+    return ok(res, rows);
   } catch (error) {
     console.error('COMPANIES_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar empresas.');
@@ -319,7 +339,7 @@ app.get('/api/companies/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM companies WHERE id = ? LIMIT 1', [req.params.id]);
     const company = rows[0];
     if (!company) return fail(res, 404, 'Empresa não encontrada.');
-    return ok(res, { data: company });
+    return ok(res, company);
   } catch (error) {
     console.error('COMPANIES_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar empresa.');
@@ -345,7 +365,7 @@ app.post('/api/companies', async (req, res) => {
       [company.id, company.name, company.cnpj, company.address, company.email, company.phone, company.bank_info]
     );
 
-    return ok(res, { data: company }, 201);
+    return ok(res, company, 201);
   } catch (error) {
     console.error('COMPANIES_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar empresa.');
@@ -362,7 +382,7 @@ app.put('/api/companies/:id', async (req, res) => {
       [p.name, p.cnpj, p.address || null, p.email || null, p.phone || null, p.bank_info || null, req.params.id]
     );
 
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('COMPANIES_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar empresa.');
@@ -386,7 +406,7 @@ app.get('/api/services', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM services ORDER BY description ASC');
     const data = rows.map((row) => ({ ...row, benefits: parseJsonArray(row.benefits) }));
-    return ok(res, { data });
+    return ok(res, data);
   } catch (error) {
     console.error('SERVICES_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar serviços.');
@@ -398,7 +418,7 @@ app.get('/api/services/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM services WHERE id = ? LIMIT 1', [req.params.id]);
     const service = rows[0];
     if (!service) return fail(res, 404, 'Serviço não encontrado.');
-    return ok(res, { data: { ...service, benefits: parseJsonArray(service.benefits) } });
+    return ok(res, { ...service, benefits: parseJsonArray(service.benefits) });
   } catch (error) {
     console.error('SERVICES_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar serviço.');
@@ -423,7 +443,7 @@ app.post('/api/services', async (req, res) => {
       [service.id, service.description, service.detailed_description, serializeJsonArray(service.benefits), service.value, service.unit]
     );
 
-    return ok(res, { data: service }, 201);
+    return ok(res, service, 201);
   } catch (error) {
     console.error('SERVICES_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar serviço.');
@@ -440,7 +460,7 @@ app.put('/api/services/:id', async (req, res) => {
       [p.description, p.detailed_description || null, serializeJsonArray(p.benefits || []), p.value || 0, p.unit || 'fixo', req.params.id]
     );
 
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('SERVICES_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar serviço.');
@@ -463,7 +483,7 @@ app.delete('/api/services/:id', async (req, res) => {
 app.get('/api/optionals', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM optionals ORDER BY description ASC');
-    return ok(res, { data: rows });
+    return ok(res, rows);
   } catch (error) {
     console.error('OPTIONALS_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar opcionais.');
@@ -475,7 +495,7 @@ app.get('/api/optionals/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM optionals WHERE id = ? LIMIT 1', [req.params.id]);
     const optional = rows[0];
     if (!optional) return fail(res, 404, 'Opcional não encontrado.');
-    return ok(res, { data: optional });
+    return ok(res, optional);
   } catch (error) {
     console.error('OPTIONALS_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar opcional.');
@@ -493,7 +513,7 @@ app.post('/api/optionals', async (req, res) => {
       optional.value,
     ]);
 
-    return ok(res, { data: optional }, 201);
+    return ok(res, optional, 201);
   } catch (error) {
     console.error('OPTIONALS_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar opcional.');
@@ -504,7 +524,7 @@ app.put('/api/optionals/:id', async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(`UPDATE optionals SET description = ?, value = ? WHERE id = ?`, [p.description, p.value || 0, req.params.id]);
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('OPTIONALS_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar opcional.');
@@ -527,7 +547,7 @@ app.delete('/api/optionals/:id', async (req, res) => {
 app.get('/api/terms', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM terms ORDER BY title ASC');
-    return ok(res, { data: rows });
+    return ok(res, rows);
   } catch (error) {
     console.error('TERMS_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar termos.');
@@ -539,7 +559,7 @@ app.get('/api/terms/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM terms WHERE id = ? LIMIT 1', [req.params.id]);
     const term = rows[0];
     if (!term) return fail(res, 404, 'Termo não encontrado.');
-    return ok(res, { data: term });
+    return ok(res, term);
   } catch (error) {
     console.error('TERMS_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar termo.');
@@ -552,7 +572,7 @@ app.post('/api/terms', async (req, res) => {
     const term = { id: p.id || crypto.randomUUID(), title: p.title, content: p.content };
 
     await safeQuery(`INSERT INTO terms (id, title, content) VALUES (?, ?, ?)`, [term.id, term.title, term.content]);
-    return ok(res, { data: term }, 201);
+    return ok(res, term, 201);
   } catch (error) {
     console.error('TERMS_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar termo.');
@@ -563,7 +583,7 @@ app.put('/api/terms/:id', async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(`UPDATE terms SET title = ?, content = ? WHERE id = ?`, [p.title, p.content, req.params.id]);
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('TERMS_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar termo.');
@@ -587,7 +607,7 @@ app.delete('/api/terms/:id', async (req, res) => {
 app.get('/api/users', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM users ORDER BY name ASC');
-    return ok(res, { data: rows.map(sanitizeUser) });
+    return ok(res, rows.map(sanitizeUser));
   } catch (error) {
     console.error('USERS_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar usuários.');
@@ -599,7 +619,7 @@ app.get('/api/users/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [req.params.id]);
     const user = rows[0];
     if (!user) return fail(res, 404, 'Usuário não encontrado.');
-    return ok(res, { data: sanitizeUser(user) });
+    return ok(res, sanitizeUser(user));
   } catch (error) {
     console.error('USERS_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar usuário.');
@@ -628,7 +648,7 @@ app.post('/api/users', async (req, res) => {
       [user.id, user.name, user.email, user.cnpj_access, user.password, user.role]
     );
 
-    return ok(res, { data: sanitizeUser(user) }, 201);
+    return ok(res, sanitizeUser(user), 201);
   } catch (error) {
     console.error('USERS_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar usuário.');
@@ -647,7 +667,7 @@ app.put('/api/users/:id', async (req, res) => {
       [p.name, p.email, normalizeCnpj(p.cnpj_access || ''), passwordHash, p.role || 'employee', req.params.id]
     );
 
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('USERS_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar usuário.');
@@ -670,7 +690,7 @@ app.delete('/api/users/:id', async (req, res) => {
 app.get('/api/clients', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM clients ORDER BY name ASC');
-    return ok(res, { data: rows });
+    return ok(res, rows);
   } catch (error) {
     console.error('CLIENTS_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar clientes.');
@@ -682,7 +702,7 @@ app.get('/api/clients/:id', async (req, res) => {
     const rows = await safeQuery('SELECT * FROM clients WHERE id = ? LIMIT 1', [req.params.id]);
     const client = rows[0];
     if (!client) return fail(res, 404, 'Cliente não encontrado.');
-    return ok(res, { data: client });
+    return ok(res, client);
   } catch (error) {
     console.error('CLIENTS_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar cliente.');
@@ -709,7 +729,7 @@ app.post('/api/clients', async (req, res) => {
       [client.id, client.name, client.document, client.address, client.person_name, client.job_title, client.email, client.phone]
     );
 
-    return ok(res, { data: client }, 201);
+    return ok(res, client, 201);
   } catch (error) {
     console.error('CLIENTS_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar cliente.');
@@ -726,7 +746,7 @@ app.put('/api/clients/:id', async (req, res) => {
       [p.name, p.document, p.address || null, p.person_name || null, p.job_title || null, p.email || null, p.phone || null, req.params.id]
     );
 
-    return ok(res, { data: { id: req.params.id } });
+    return ok(res, { id: req.params.id });
   } catch (error) {
     console.error('CLIENTS_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar cliente.');
@@ -750,7 +770,7 @@ app.get('/api/proposals', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM proposals ORDER BY created_at DESC');
     const data = await attachProposalRelations(rows);
-    return ok(res, { data });
+    return ok(res, data);
   } catch (error) {
     console.error('PROPOSALS_LIST_ERROR:', error);
     return fail(res, 500, 'Erro ao listar propostas.');
@@ -763,7 +783,7 @@ app.get('/api/proposals/:id', async (req, res) => {
     const proposal = rows[0];
     if (!proposal) return fail(res, 404, 'Proposta não encontrada.');
     const [data] = await attachProposalRelations([proposal]);
-    return ok(res, { data });
+    return ok(res, data);
   } catch (error) {
     console.error('PROPOSALS_GET_ERROR:', error);
     return fail(res, 500, 'Erro ao buscar proposta.');
@@ -801,7 +821,7 @@ app.post('/api/proposals', async (req, res) => {
     await writeProposalRelations(id, 'proposal_terms', 'term_id', p.terms_ids || []);
     await writeProposalRelations(id, 'proposal_optionals', 'optional_id', p.optionals_ids || []);
 
-    return ok(res, { data: { id, number } }, 201);
+    return ok(res, { id, number }, 201);
   } catch (error) {
     console.error('PROPOSALS_CREATE_ERROR:', error);
     return fail(res, 500, 'Erro ao criar proposta.');
@@ -837,7 +857,7 @@ app.put('/api/proposals/:id', async (req, res) => {
     await writeProposalRelations(id, 'proposal_terms', 'term_id', p.terms_ids || []);
     await writeProposalRelations(id, 'proposal_optionals', 'optional_id', p.optionals_ids || []);
 
-    return ok(res, { data: { id } });
+    return ok(res, { id });
   } catch (error) {
     console.error('PROPOSALS_UPDATE_ERROR:', error);
     return fail(res, 500, 'Erro ao atualizar proposta.');
@@ -861,12 +881,24 @@ app.delete('/api/proposals/:id', async (req, res) => {
 /* =========================
    STATIC + SPA FALLBACK
 ========================= */
+app.use(['/api', '/auth'], (_req, res) => fail(res, 404, 'Rota não encontrada.'));
+
 app.use(express.static(distDir));
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(distDir, 'index.html'));
+  if (_req.path.startsWith('/api') || _req.path.startsWith('/auth')) {
+    return res.status(404).json({ error: 'Rota não encontrada.', data: null });
+  }
+  if (_req.method !== 'GET' && _req.method !== 'HEAD') {
+    return res.status(405).json({ error: 'Método não permitido.', data: null });
+  }
+  return res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`[OK] Server listening on port ${port}`);
-  console.log(`[OK] DB=${DB_DATABASE} HOST=${DB_HOST}:${DB_PORT} USER=${DB_USER}`);
+app.listen(port, host, () => {
+  console.log(`[OK] Server listening on http://${host}:${port}`);
+  if (isDbConfigured) {
+    console.log(
+      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${process.env.DB_USERNAME}`
+    );
+  }
 });

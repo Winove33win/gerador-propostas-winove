@@ -10,6 +10,7 @@ import {
 
 const API_BASE = '/api';
 const SESSION_KEY = 'prop_session';
+type Session = { user: User; token: string };
 
 type ApiListResponse<T> = { data: T[] };
 type ApiItemResponse<T> = { data: T };
@@ -19,10 +20,12 @@ const request = async <T>(
   options: RequestInit & { body?: unknown } = {}
 ): Promise<T> => {
   const { body, ...rest } = options;
+  const session = readSession();
   const response = await fetch(path, {
     ...rest,
     headers: {
       'Content-Type': 'application/json',
+      ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
       ...(rest.headers || {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -72,32 +75,32 @@ const getItem = async <T>(path: string): Promise<T> => {
   return response.data;
 };
 
-const storeSession = (user: User | null) => {
-  if (!user) {
+const storeSession = (session: Session | null) => {
+  if (!session) {
     localStorage.removeItem(SESSION_KEY);
     return;
   }
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 };
 
-const readSession = (): User | null => {
+const readSession = (): Session | null => {
   const raw = localStorage.getItem(SESSION_KEY);
-  return raw ? (JSON.parse(raw) as User) : null;
+  return raw ? (JSON.parse(raw) as Session) : null;
 };
 
 export const api = {
   auth: {
-    getCurrentUser: (): User | null => readSession(),
+    getCurrentUser: (): User | null => readSession()?.user ?? null,
     login: async (email: string, cnpj: string, password: string): Promise<User> => {
-      const response = await request<{ user: User }>('/auth/login', {
+      const response = await request<{ data: { user: User; token: string } }>('/auth/login', {
         method: 'POST',
         body: { email, cnpj_access: cnpj, password },
       });
-      storeSession(response.user);
-      return response.user;
+      storeSession({ user: response.data.user, token: response.data.token });
+      return response.data.user;
     },
     register: async (payload: Omit<User, 'id' | 'role'> & { role?: User['role'] }): Promise<User> => {
-      const response = await request<{ user: User }>('/auth/register', {
+      const response = await request<{ data: { user: User; token: string } }>('/auth/register', {
         method: 'POST',
         body: {
           name: payload.name,
@@ -106,8 +109,8 @@ export const api = {
           password: payload.password,
         },
       });
-      storeSession(response.user);
-      return response.user;
+      storeSession({ user: response.data.user, token: response.data.token });
+      return response.data.user;
     },
     logout: () => {
       storeSession(null);
