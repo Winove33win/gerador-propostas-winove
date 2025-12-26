@@ -89,15 +89,15 @@ export const api = {
   auth: {
     getCurrentUser: (): User | null => readSession(),
     login: async (email: string, cnpj: string, password: string): Promise<User> => {
-      const response = await request<{ user: User }>('/auth/login', {
+      const response = await request<{ data: { user: User; token: string } }>('/auth/login', {
         method: 'POST',
         body: { email, cnpj_access: cnpj, password },
       });
-      storeSession(response.user);
-      return response.user;
+      storeSession(response.data.user);
+      return response.data.user;
     },
     register: async (payload: Omit<User, 'id' | 'role'> & { role?: User['role'] }): Promise<User> => {
-      const response = await request<{ user: User }>('/auth/register', {
+      const response = await request<{ data: { user: User; token: string } }>('/auth/register', {
         method: 'POST',
         body: {
           name: payload.name,
@@ -106,8 +106,8 @@ export const api = {
           password: payload.password,
         },
       });
-      storeSession(response.user);
-      return response.user;
+      storeSession(response.data.user);
+      return response.data.user;
     },
     logout: () => {
       storeSession(null);
