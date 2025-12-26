@@ -9,7 +9,7 @@ export default defineConfig(() => ({
   },
   plugins: [react()],
   build: {
-    outDir: 'controle.winove.com.br/dist',
+    outDir: 'dist',
     emptyOutDir: true,
   },
   resolve: {
