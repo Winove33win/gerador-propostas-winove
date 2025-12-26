@@ -10,8 +10,6 @@ RewriteRule ^api/(.*)$ http://127.0.0.1:3333/api/$1 [P,L]
 RewriteCond %{REQUEST_URI} ^/auth/ [NC]
 RewriteRule ^auth/(.*)$ http://127.0.0.1:3333/auth/$1 [P,L]
 
-ProxyPreserveHost On
-
 # =========================
 # SPA FALLBACK (VITE / REACT)
 # =========================
