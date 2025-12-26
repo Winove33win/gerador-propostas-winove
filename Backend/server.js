@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -283,6 +286,20 @@ const healthDbHandler = async (_req, res) => {
 app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
+
+app.get('/api/tables', async (_req, res) => {
+  try {
+    const rows = await safeQuery('SHOW TABLES');
+    ok(res, rows);
+  } catch (error) {
+    console.error('TABLES_ERROR:', error);
+    fail(res, 500, 'Erro ao listar tabelas.', error?.message);
+  }
+});
+
+/* =========================
+   COMPANIES
+========================= */
 
 /* =========================
    COMPANIES
