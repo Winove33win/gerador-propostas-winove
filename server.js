@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,21 +11,36 @@ const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 3000;
 const distDir = path.join(__dirname, 'dist');
 
+const DB_DATABASE =
+  process.env.DB_DATABASE ||
+  process.env.DB_NAME ||
+  'propostas-winove';
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = Number(process.env.DB_PORT || 3306);
+const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
+const DB_PASS = process.env.DB_PASSWORD || process.env.DB_PASS;
+
+if (!DB_USER || !DB_PASS) {
+  throw new Error('DB_USER/DB_PASS não configurados nas variáveis de ambiente.');
+}
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 const dbPool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USERNAME || process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_DATABASE || process.env.DB_NAME || '',
+  host: DB_HOST,
+  port: DB_PORT,
+  user: DB_USER,
+  password: DB_PASS,
+  database: DB_DATABASE,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
 });
 
-const normalizeCnpj = (value = '') => value.replace(/\D/g, '');
+const SALT_ROUNDS = 12;
+
+const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
 const safeQuery = async (sql, params = []) => {
   const [rows] = await dbPool.execute(sql, params);
@@ -90,7 +106,7 @@ const attachProposalRelations = async (proposals) => {
   }));
 };
 
-app.post('/auth/login', async (req, res) => {
+const loginHandler = async (req, res) => {
   try {
     const payload = req.body?.auth || req.body;
     const email = payload?.email?.trim();
@@ -106,13 +122,21 @@ app.post('/auth/login', async (req, res) => {
       `SELECT id, name, email, cnpj_access, password, role
        FROM users
        WHERE email = ?
-         AND REPLACE(REPLACE(REPLACE(cnpj_access, '.', ''), '/', ''), '-', '') = ?
        LIMIT 1`,
-      [email, normalizedCnpj]
+      [email]
     );
 
     const user = rows[0];
-    if (!user || user.password !== password) {
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    if (normalizeCnpj(user.cnpj_access) !== normalizedCnpj) {
+      return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
@@ -120,9 +144,9 @@ app.post('/auth/login', async (req, res) => {
   } catch (error) {
     return res.status(500).json({ error: 'Erro interno ao autenticar.' });
   }
-});
+};
 
-app.post('/auth/register', async (req, res) => {
+const registerHandler = async (req, res) => {
   try {
     const { name, email, cnpj_access: cnpjAccess, password } = req.body || {};
     if (!name || !email || !cnpjAccess || !password) {
@@ -135,18 +159,39 @@ app.post('/auth/register', async (req, res) => {
     }
 
     const id = crypto.randomUUID();
+    const cnpjNormalized = normalizeCnpj(cnpjAccess);
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     await safeQuery(
       'INSERT INTO users (id, name, email, cnpj_access, password, role) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, email, cnpjAccess, password, 'employee']
+      [id, name, email, cnpjNormalized, passwordHash, 'employee']
     );
 
     return res.status(201).json({
-      user: sanitizeUser({ id, name, email, cnpj_access: cnpjAccess, role: 'employee' }),
+      user: sanitizeUser({ id, name, email, cnpj_access: cnpjNormalized, role: 'employee' }),
     });
   } catch (error) {
     return res.status(500).json({ error: 'Erro interno ao registrar.' });
   }
-});
+};
+
+const authRouter = express.Router();
+authRouter.post('/login', loginHandler);
+authRouter.post('/register', registerHandler);
+
+app.use('/auth', authRouter);
+app.use('/api/auth', authRouter);
+
+const healthDbHandler = async (_req, res) => {
+  try {
+    const [rows] = await dbPool.query('SELECT DATABASE() AS db');
+    return res.json({ ok: true, db: rows?.[0]?.db });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+};
+
+app.get('/health/db', healthDbHandler);
+app.get('/api/health/db', healthDbHandler);
 
 app.get('/api/companies', async (_req, res) => {
   try {
