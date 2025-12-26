@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3000);
 const host = '0.0.0.0';
-const distDir = path.join(__dirname, '..', 'dist');
+const distDir = path.join(__dirname, 'dist');
 
 /* =========================
    ENV / DB CONFIG
