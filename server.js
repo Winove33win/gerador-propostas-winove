@@ -204,51 +204,68 @@ const loginHandler = async (req, res) => {
 
 const registerHandler = async (req, res) => {
   try {
-    const body = req.body?.auth || req.body || {};
-    const name = body?.name?.trim();
-    const email = body?.email?.trim();
-    const cnpjAccess = body?.cnpj_access;
-    const password = body?.password;
+    console.log('➡️ REGISTER payload:', req.body);
+
+    const payload = req.body?.auth || req.body;
+
+    const name = payload?.name?.trim();
+    const email = payload?.email?.trim();
+    const cnpjAccess = payload?.cnpj_access;
+    const password = payload?.password;
 
     if (!name || !email || !cnpjAccess || !password) {
-      return fail(res, 400, 'Dados obrigatórios ausentes.');
+      console.warn('❌ Dados ausentes');
+      return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
     }
 
     const cnpjNormalized = normalizeCnpj(cnpjAccess);
-    if (cnpjNormalized.length !== 14) {
-      return fail(res, 400, 'CNPJ inválido. Use 14 dígitos.');
-    }
 
-    const existing = await safeQuery('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+    const existing = await safeQuery(
+      'SELECT id FROM users WHERE email = ? LIMIT 1',
+      [email]
+    );
+
     if (existing.length > 0) {
-      return fail(res, 409, 'E-mail já cadastrado.');
+      console.warn('⚠️ Email já cadastrado:', email);
+      return res.status(409).json({ error: 'E-mail já cadastrado.' });
     }
 
     const id = crypto.randomUUID();
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-await safeQuery(
-  'INSERT INTO users (id, name, email, cnpj_access, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-  [id, name, email, cnpjNormalized, passwordHash, 'employee']
-);
+    console.log('📝 Inserindo usuário:', {
+      id,
+      name,
+      email,
+      cnpjNormalized,
+    });
 
+    await safeQuery(
+      `INSERT INTO users (id, name, email, cnpj_access, password, role, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [id, name, email, cnpjNormalized, passwordHash, 'employee']
+    );
 
-    const user = { id, name, email, cnpj_access: cnpjNormalized, role: 'employee' };
-    const token = signToken(user);
+    console.log('✅ Usuário criado com sucesso:', email);
 
-    return ok(res, { token, user }, 201);
+    return res.status(201).json({
+      ok: true,
+      user: {
+        id,
+        name,
+        email,
+        cnpj_access: cnpjNormalized,
+        role: 'employee',
+      },
+    });
   } catch (error) {
-    console.error('AUTH_REGISTER_ERROR:', error);
-    return fail(res, 500, 'Erro interno ao registrar.');
+    console.error('🔥 ERRO NO REGISTER:', error);
+    return res.status(500).json({
+      error: 'Erro interno ao registrar.',
+      detail: error.message,
+    });
   }
 };
-
-const authRouter = express.Router();
-authRouter.post('/login', loginHandler);
-authRouter.post('/register', registerHandler);
-
-app.use('/auth', authRouter);
-app.use('/api/auth', authRouter);
 
 /* =========================
    HEALTH
