@@ -28,6 +28,25 @@ if (missingEnv.length > 0) {
   console.warn(`[WARN] Variáveis de ambiente ausentes: ${missingEnv.join(', ')}.`);
 }
 
+const logStartupEnv = () => {
+  const dbUser = process.env.DB_USERNAME || process.env.DB_USER || 'not-set';
+  const dbHost = process.env.DB_HOST || 'not-set';
+  const dbPort = process.env.DB_PORT || 3306;
+  const dbName = process.env.DB_DATABASE || 'not-set';
+
+  console.log(`[INIT] NODE_ENV=${process.env.NODE_ENV || 'development'} PORT=${port} HOST=${host}`);
+  console.log(`[INIT] DB host=${dbHost}:${dbPort} user=${dbUser} database=${dbName}`);
+};
+
+const verifyDbConnection = async () => {
+  if (!isDbConfigured || !dbPool) {
+    throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
+  }
+  const conn = await dbPool.getConnection();
+  await conn.ping();
+  conn.release();
+};
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
@@ -894,11 +913,34 @@ app.get('*', (_req, res) => {
   return res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(port, host, () => {
-  console.log(`[OK] Server listening on http://${host}:${port}`);
-  if (isDbConfigured) {
-    console.log(
-      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${process.env.DB_USERNAME}`
-    );
+const start = async () => {
+  logStartupEnv();
+
+  if (!isDbConfigured) {
+    console.warn('[WARN] Banco de dados não configurado. Verifique variáveis DB_HOST/DB_PORT/DB_DATABASE/DB_USER/DB_PASSWORD.');
+  } else {
+    try {
+      await verifyDbConnection();
+      console.log('[OK] DB ping bem-sucedido.');
+    } catch (error) {
+      console.error('[FATAL] Falha ao conectar no banco:', error?.message || error);
+      process.exit(1);
+    }
   }
+
+  app.listen(port, host, () => {
+    console.log(`[OK] Server listening on http://${host}:${port}`);
+    if (isDbConfigured) {
+      console.log(
+        `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${
+          process.env.DB_USERNAME || process.env.DB_USER
+        }`
+      );
+    }
+  });
+};
+
+start().catch((error) => {
+  console.error('[FATAL] Erro ao iniciar servidor:', error);
+  process.exit(1);
 });
