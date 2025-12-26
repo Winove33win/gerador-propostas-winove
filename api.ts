@@ -27,20 +27,36 @@ const request = async <T>(
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  const contentType = response.headers.get('Content-Type') || '';
+  const isJsonResponse = contentType.includes('application/json');
 
   if (!response.ok) {
     let message = 'Erro ao processar solicitação.';
-    try {
-      const payload = await response.json();
-      message = payload?.error || message;
-    } catch (error) {
-      // ignore JSON parse failures
+    if (isJsonResponse) {
+      try {
+        const payload = await response.json();
+        message = payload?.error || message;
+      } catch (error) {
+        // ignore JSON parse failures
+      }
+    } else {
+      try {
+        const payload = await response.text();
+        message = payload || message;
+      } catch (error) {
+        // ignore text parse failures
+      }
     }
     throw new Error(message);
   }
 
   if (response.status === 204) {
     return undefined as T;
+  }
+
+  if (!isJsonResponse) {
+    const payload = await response.text();
+    throw new Error(payload || 'Resposta inválida do servidor.');
   }
 
   return response.json();
