@@ -12,6 +12,25 @@ const STORAGE_KEYS = {
   SESSION: 'prop_session'
 };
 
+const API_BASE = '/api';
+
+const isBrowser = typeof window !== 'undefined';
+
+const safeFetch = async (url: string, options?: RequestInit) => {
+  if (!isBrowser) return;
+  try {
+    await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.headers || {})
+      },
+      ...options
+    });
+  } catch (error) {
+    console.warn('Falha ao sincronizar com a API:', error);
+  }
+};
+
 const get = <T,>(key: string): T[] => {
   const data = localStorage.getItem(key);
   return data ? JSON.parse(data) : [];
@@ -89,6 +108,10 @@ export const db = {
       const items = get<User>(STORAGE_KEYS.USERS);
       const newItem = { ...data, id: crypto.randomUUID() };
       save(STORAGE_KEYS.USERS, [...items, newItem]);
+      void safeFetch('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
       return newItem;
     },
     update: (id: string, data: Partial<User>) => {
@@ -125,15 +148,24 @@ export const db = {
       const items = get<Client>(STORAGE_KEYS.CLIENTS);
       const newItem = { ...data, id: crypto.randomUUID() };
       save(STORAGE_KEYS.CLIENTS, [...items, newItem]);
+      void safeFetch(`${API_BASE}/clients`, {
+        method: 'POST',
+        body: JSON.stringify(newItem)
+      });
       return newItem;
     },
     update: (id: string, data: Partial<Client>) => {
       const items = get<Client>(STORAGE_KEYS.CLIENTS);
       const updated = items.map(i => i.id === id ? { ...i, ...data } : i);
       save(STORAGE_KEYS.CLIENTS, updated);
+      void safeFetch(`${API_BASE}/clients/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...updated.find(i => i.id === id), ...data })
+      });
     },
     delete: (id: string) => {
       save(STORAGE_KEYS.CLIENTS, get<Client>(STORAGE_KEYS.CLIENTS).filter(i => i.id !== id));
+      void safeFetch(`${API_BASE}/clients/${id}`, { method: 'DELETE' });
     }
   },
   services: {
@@ -198,15 +230,27 @@ export const db = {
         number: `PRP-${new Date().getFullYear()}-${items.length + 1}`
       };
       save(STORAGE_KEYS.PROPOSALS, [...items, newItem]);
+      void safeFetch(`${API_BASE}/proposals`, {
+        method: 'POST',
+        body: JSON.stringify(newItem)
+      });
       return newItem;
     },
     update: (id: string, data: Partial<Proposal>) => {
       const items = get<Proposal>(STORAGE_KEYS.PROPOSALS);
       const updated = items.map(i => i.id === id ? { ...i, ...data } : i);
       save(STORAGE_KEYS.PROPOSALS, updated);
+      const payload = updated.find(i => i.id === id);
+      if (payload) {
+        void safeFetch(`${API_BASE}/proposals/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        });
+      }
     },
     delete: (id: string) => {
       save(STORAGE_KEYS.PROPOSALS, get<Proposal>(STORAGE_KEYS.PROPOSALS).filter(i => i.id !== id));
+      void safeFetch(`${API_BASE}/proposals/${id}`, { method: 'DELETE' });
     }
   }
 };
