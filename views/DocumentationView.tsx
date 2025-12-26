@@ -70,7 +70,7 @@ const DocumentationView: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <span className="text-slate-500 block">Arquivo Inicial</span>
-                <span className="font-mono text-emerald-400">app.js / server.js</span>
+                <span className="font-mono text-emerald-400">controle.winove.com.br/backend/app.js</span>
               </div>
               <div className="space-y-1">
                 <span className="text-slate-500 block">Diretório Root</span>
