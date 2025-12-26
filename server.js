@@ -227,10 +227,11 @@ const registerHandler = async (req, res) => {
     const id = crypto.randomUUID();
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    await safeQuery(
-      'INSERT INTO users (id, name, email, cnpj_access, password, role) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, name, email, cnpjNormalized, passwordHash, 'employee']
-    );
+await safeQuery(
+  'INSERT INTO users (id, name, email, cnpj_access, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+  [id, name, email, cnpjNormalized, passwordHash, 'employee']
+);
+
 
     const user = { id, name, email, cnpj_access: cnpjNormalized, role: 'employee' };
     const token = signToken(user);
