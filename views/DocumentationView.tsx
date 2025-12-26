@@ -1,151 +1,290 @@
 
 import React from 'react';
-import { Database, Network, Key, Workflow, Code, FileText, ShieldCheck, UserPlus } from 'lucide-react';
+import { 
+  Database, 
+  Network, 
+  Key, 
+  Workflow, 
+  Code, 
+  FileText, 
+  ShieldCheck, 
+  UserPlus, 
+  Server, 
+  Settings, 
+  Terminal,
+  Layers,
+  HardDrive
+} from 'lucide-react';
 
 const DocumentationView: React.FC = () => {
   return (
-    <div className="max-w-5xl mx-auto space-y-12 pb-20">
-      <header className="space-y-4">
-        <div className="inline-block px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-widest">Documentação Oficial v3.0</div>
-        <h2 className="text-4xl font-extrabold text-slate-900 tracking-tight">Arquitetura & Segurança</h2>
-        <p className="text-xl text-slate-500">Manual técnico completo para integração com a API REST, persistência MariaDB e sistema de autenticação tripla da Winove.</p>
+    <div className="max-w-6xl mx-auto space-y-16 pb-32">
+      {/* HEADER DINÂMICO */}
+      <header className="space-y-6 border-b border-slate-200 pb-10">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-600 p-2 rounded-lg text-white">
+            <Layers size={24} />
+          </div>
+          <div className="inline-block px-4 py-1 bg-blue-50 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">
+            Documentação Master v4.0
+          </div>
+        </div>
+        <h2 className="text-5xl font-black text-slate-900 tracking-tight leading-tight">
+          Sistema de Propulsão <br/> 
+          <span className="text-blue-600 italic">Winove Online</span>
+        </h2>
+        <p className="text-xl text-slate-500 max-w-3xl leading-relaxed">
+          Guia completo de engenharia para o sistema de gestão de propostas. Abrange desde o provisionamento no Plesk até a estrutura relacional do MariaDB e fluxos de segurança.
+        </p>
       </header>
 
-      {/* Security Info */}
-      <section className="bg-blue-600 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row gap-8 items-center">
-        <div className="bg-white/20 p-4 rounded-2xl">
-          <ShieldCheck size={48} />
+      {/* 1. INFRAESTRUTURA PLESK & NODE.JS */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <Server className="text-blue-600" size={32} />
+          <h3 className="text-3xl font-bold text-slate-800 tracking-tight">1. Infraestrutura do Servidor</h3>
         </div>
-        <div>
-          <h3 className="text-xl font-bold mb-2">Segurança: Tripla Autenticação</h3>
-          <p className="text-blue-100 text-sm leading-relaxed">
-            O sistema implementa uma camada de segurança reforçada exigindo três fatores para o acesso: 
-            <b> E-mail cadastrado</b>, <b>CNPJ da Empresa vinculada</b> e <b>Senha pessoal</b>. 
-            Isso garante que apenas colaboradores autorizados de empresas parceiras acessem o painel.
-          </p>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-slate-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-8 opacity-10">
+              <Terminal size={120} />
+            </div>
+            <h4 className="text-blue-400 font-black uppercase text-xs tracking-widest mb-6">Configuração do Ambiente (Plesk)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12 text-sm">
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Domínio de Operação</span>
+                <span className="font-mono text-emerald-400">controle.winove.com.br</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Versão do Node.js</span>
+                <span className="font-mono text-emerald-400">22.21.1 (Stable)</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Gerenciador de Pacotes</span>
+                <span className="font-mono text-emerald-400">npm (detectado automaticamente)</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Modo de Execução</span>
+                <span className="font-mono text-emerald-400">production</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Arquivo Inicial</span>
+                <span className="font-mono text-emerald-400">app.js / server.js</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-slate-500 block">Diretório Root</span>
+                <span className="font-mono text-slate-400 text-xs">/httpdocs</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border-2 border-slate-100 rounded-3xl p-8 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <Settings className="text-blue-600" size={20} />
+              <h4 className="font-bold text-slate-800">Variáveis NPM Personalizadas</h4>
+            </div>
+            <div className="space-y-3">
+              {[
+                { k: 'NODE_ENV', v: 'production' },
+                { k: 'PORT', v: '3000' },
+                { k: 'APP_URL', v: 'http://controle.winove.com.br' },
+                { k: 'DB_HOST', v: 'localhost' },
+                { k: 'DB_PORT', v: '3306' }
+              ].map((item, i) => (
+                <div key={i} className="flex flex-col p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{item.k}</span>
+                  <span className="text-xs font-mono text-blue-600">{item.v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Database Schema */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-slate-200 pb-2">
-          <Database className="text-blue-600" size={24} />
-          <h3 className="text-2xl font-bold text-slate-800">1. Esquema Relacional (MariaDB)</h3>
+      {/* 2. PERSISTÊNCIA MARIADB & SQL SCRIPTS */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <Database className="text-blue-600" size={32} />
+          <h3 className="text-3xl font-bold text-slate-800 tracking-tight">2. Banco de Dados MariaDB</h3>
         </div>
-        <p className="text-slate-600 text-sm">Estrutura de tabelas otimizada para o motor <b>InnoDB</b>, incluindo gestão de usuários e colaboradores.</p>
-        <div className="bg-slate-900 rounded-2xl p-6 overflow-x-auto shadow-xl">
-          <pre className="text-emerald-400 font-mono text-xs leading-relaxed">
-{`-- Tabela de Usuários (Acesso ao Sistema)
+
+        <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl overflow-hidden shadow-lg">
+          <div className="p-6 bg-white border-b border-slate-200 flex flex-wrap gap-8">
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Database Name</span>
+              <span className="font-mono font-bold text-blue-700">propostas-winove</span>
+            </div>
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">User</span>
+              <span className="font-mono font-bold text-blue-700">winove-controle</span>
+            </div>
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Password</span>
+              <span className="font-mono font-bold text-rose-600">amilase1234@</span>
+            </div>
+            <div>
+              <span className="text-[10px] font-black text-slate-400 uppercase block mb-1">Access Control</span>
+              <span className="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-black uppercase">Remote Connections OK</span>
+            </div>
+          </div>
+
+          <div className="p-8 space-y-6 bg-slate-900">
+             <div className="flex items-center gap-2 text-blue-400 mb-2">
+                <Terminal size={18} />
+                <span className="text-xs font-black uppercase tracking-widest">DDL SQL - Scripts de Criação</span>
+             </div>
+             <pre className="text-emerald-400 font-mono text-xs leading-relaxed overflow-x-auto">
+{`-- 1. Tabela de Segurança e Autenticação
 CREATE TABLE users (
   id CHAR(36) PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
-  cnpj_access VARCHAR(18) NOT NULL,    -- CNPJ que atua como chave de segurança
-  password VARCHAR(255) NOT NULL,      -- Senha criptografada
+  cnpj_access VARCHAR(18) NOT NULL, -- Chave de segurança tripla
+  password VARCHAR(255) NOT NULL,
   role ENUM('admin', 'employee') DEFAULT 'employee',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabela de Clientes
+-- 2. Tabela de Clientes
 CREATE TABLE clients (
   id CHAR(36) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
+  document VARCHAR(18) UNIQUE NOT NULL, -- CPF ou CNPJ
+  address TEXT,
   person_name VARCHAR(100),
   job_title VARCHAR(100),
-  document VARCHAR(18) UNIQUE,
   email VARCHAR(100),
   phone VARCHAR(20)
 );
 
--- Tabela de Propostas (Simplificada)
+-- 3. Tabela de Propostas (Cabeçalho)
 CREATE TABLE proposals (
   id CHAR(36) PRIMARY KEY,
-  number VARCHAR(50) UNIQUE,
-  company_id CHAR(36),
+  number VARCHAR(50) UNIQUE NOT NULL,
   client_id CHAR(36),
-  status ENUM('rascunho', 'enviada', 'aceita', 'recusada'),
+  company_id CHAR(36),
+  status ENUM('rascunho', 'enviada', 'aceita', 'recusada') DEFAULT 'rascunho',
   total_value DECIMAL(12,2),
+  discount DECIMAL(12,2) DEFAULT 0.00,
+  deadline VARCHAR(100),
+  portfolio_url VARCHAR(255),
+  domain VARCHAR(255),
+  platform VARCHAR(100),
+  notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+  expiry_date DATETIME,
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+
+-- 4. Tabelas de Relacionamento (Muitos para Muitos)
+CREATE TABLE proposal_services (
+  proposal_id CHAR(36),
+  service_id CHAR(36),
+  PRIMARY KEY (proposal_id, service_id)
+);
+
+CREATE TABLE proposal_terms (
+  proposal_id CHAR(36),
+  term_id CHAR(36),
+  PRIMARY KEY (proposal_id, term_id)
 );`}
-          </pre>
+             </pre>
+          </div>
         </div>
       </section>
 
-      {/* REST API Endpoints */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-slate-200 pb-2">
-          <Network className="text-blue-600" size={24} />
-          <h3 className="text-2xl font-bold text-slate-800">2. Endpoints da API REST</h3>
+      {/* 3. SEGURANÇA & API */}
+      <section className="space-y-8">
+        <div className="flex items-center gap-4">
+          <ShieldCheck className="text-blue-600" size={32} />
+          <h3 className="text-3xl font-bold text-slate-800 tracking-tight">3. Segurança e Protocolos REST</h3>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {[
-            { method: 'POST', path: '/api/auth/login', desc: 'Valida as 3 credenciais e retorna o token de sessão/usuário' },
-            { method: 'POST', path: '/api/auth/register', desc: 'Cadastra novo colaborador (Default role: employee)' },
-            { method: 'GET', path: '/api/users', desc: 'Lista todos os colaboradores cadastrados (Apenas Admin)' },
-            { method: 'GET', path: '/api/clients', desc: 'Recupera lista de clientes com filtros de busca' },
-            { method: 'POST', path: '/api/proposals', desc: 'Cria proposta e gera número sequencial automático' },
-            { method: 'GET', path: '/api/proposals/:id/pdf', desc: 'Gera stream do documento PDF personalizado Winove' },
-          ].map((route, i) => (
-            <div key={i} className="bg-white border border-slate-200 p-5 rounded-2xl flex items-start gap-4 shadow-sm hover:border-blue-300 transition-colors">
-              <span className={`px-2.5 py-1 rounded-md text-[9px] font-black tracking-widest ${
-                route.method === 'GET' ? 'bg-emerald-50 text-emerald-600' :
-                route.method === 'POST' ? 'bg-blue-50 text-blue-600' :
-                'bg-amber-50 text-amber-600'
-              }`}>{route.method}</span>
-              <div>
-                <code className="text-sm font-bold text-slate-800">{route.path}</code>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">{route.desc}</p>
+
+        <div className="bg-blue-600 rounded-3xl p-10 text-white shadow-xl relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row gap-12 items-center">
+            <div className="w-24 h-24 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+               <Key size={48} />
+            </div>
+            <div className="space-y-4">
+              <h4 className="text-2xl font-black">Algoritmo de Tripla Validação</h4>
+              <p className="text-blue-100 leading-relaxed">
+                Para mitigar acessos indevidos em ambiente de produção, o sistema não utiliza apenas e-mail e senha. 
+                Cada requisição de login deve conter o <b>CNPJ da Unidade de Negócio</b> vinculada ao colaborador.
+              </p>
+              <div className="flex flex-wrap gap-4 pt-2">
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: E-mail Profissional</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: CNPJ da Empresa</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 3: Senha Criptografada</span>
               </div>
             </div>
-          ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+               <Network size={16} className="text-blue-600" />
+               Principais Endpoints da API
+            </h4>
+            <div className="divide-y divide-slate-100 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+              {[
+                { m: 'POST', p: '/auth/login', d: 'Autenticação tripla e geração de JWT' },
+                { m: 'POST', p: '/auth/register', d: 'Criação de novos colaboradores (Employee)' },
+                { m: 'GET', p: '/clients', d: 'Listagem de clientes para o Wizard' },
+                { m: 'POST', p: '/proposals', d: 'Persistência de nova proposta comercial' },
+                { m: 'GET', p: '/proposals/:id/pdf', d: 'Engine de renderização jsPDF Winove' },
+              ].map((r, i) => (
+                <div key={i} className="p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                  <span className={`text-[10px] font-black px-2 py-1 rounded ${r.m === 'GET' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{r.m}</span>
+                  <div>
+                    <code className="text-xs font-bold text-slate-800">{r.p}</code>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{r.d}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+               <Code size={16} className="text-blue-600" />
+               Payload de Autenticação (Exemplo)
+            </h4>
+            <div className="bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-800">
+               <pre className="text-blue-300 font-mono text-[11px] leading-relaxed">
+{`{
+  "auth": {
+    "email": "contato@winove.com.br",
+    "cnpj_access": "29.900.423/0001-40",
+    "password": "**************"
+  },
+  "context": {
+    "ip": "186.232.XX.XX",
+    "agent": "Plesk_Node_Env"
+  }
+}`}
+               </pre>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Payloads */}
-      <section className="space-y-6">
-        <div className="flex items-center gap-3 border-b border-slate-200 pb-2">
-          <Code className="text-blue-600" size={24} />
-          <h3 className="text-2xl font-bold text-slate-800">3. Exemplos de Payload (JSON)</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-             <div className="flex items-center gap-2 mb-4">
-                <UserPlus size={16} className="text-blue-600" />
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-tighter">Cadastro de Usuário</h4>
-             </div>
-             <pre className="text-slate-800 text-[11px] font-mono leading-relaxed">
-{`{
-  "name": "Fernando Winove",
-  "email": "contato@winove.com.br",
-  "cnpj_access": "29.900.423/0001-40",
-  "password": "sua_senha_aqui",
-  "role": "admin"
-}`}
-             </pre>
+      {/* FINAL FOOTER */}
+      <footer className="pt-16 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="flex items-center gap-4">
+           <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400">
+              <HardDrive size={24} />
            </div>
-           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-             <div className="flex items-center gap-2 mb-4">
-                <Key size={16} className="text-blue-600" />
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-tighter">Login (Credenciais)</h4>
-             </div>
-             <pre className="text-slate-800 text-[11px] font-mono leading-relaxed">
-{`{
-  "email": "contato@winove.com.br",
-  "cnpj_access": "29900423000140",
-  "password": "sua_senha_aqui"
-}`}
-             </pre>
+           <div>
+              <p className="text-xs font-black text-slate-900 uppercase">Winove Online Core</p>
+              <p className="text-[10px] text-slate-500">Desenvolvido para alta performance comercial.</p>
            </div>
         </div>
-      </section>
-
-      {/* Final Note */}
-      <footer className="pt-10 border-t border-slate-200 flex items-center justify-between text-slate-400 text-xs font-medium uppercase tracking-widest">
-        <span>Winove Online © 2024 | Sistema Propulsão</span>
-        <div className="flex gap-6">
-          <a href="#" className="hover:text-blue-600 transition-colors">Audit Logs</a>
-          <a href="#" className="hover:text-blue-600 transition-colors">Termos de Uso</a>
+        <div className="flex gap-8 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+           <a href="#" className="hover:text-blue-600">Privacy Policy</a>
+           <a href="#" className="hover:text-blue-600">API Uptime</a>
+           <a href="#" className="hover:text-blue-600">Support</a>
         </div>
       </footer>
     </div>
