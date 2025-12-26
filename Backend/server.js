@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3333);
+const host = process.env.HOST || process.env.BIND_HOST || '127.0.0.1';
 const distDir = path.join(__dirname, '..', 'dist');
 
 /* =========================
@@ -281,9 +282,14 @@ const registerHandler = async (req, res) => {
   }
 };
 
+app.post('/auth/login', loginHandler);
+app.post('/auth/register', registerHandler);
+
 /* =========================
    HEALTH
 ========================= */
+const healthHandler = (_req, res) => ok(res, { ok: true });
+
 const healthDbHandler = async (_req, res) => {
   if (!dbPool) {
     return fail(res, 503, 'Banco de dados não configurado.');
@@ -297,6 +303,8 @@ const healthDbHandler = async (_req, res) => {
   }
 };
 
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
@@ -861,12 +869,20 @@ app.delete('/api/proposals/:id', async (req, res) => {
 /* =========================
    STATIC + SPA FALLBACK
 ========================= */
+app.use(['/api', '/auth'], (_req, res) => fail(res, 404, 'Rota não encontrada.'));
+
 app.use(express.static(distDir));
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(distDir, 'index.html'));
+  if (_req.path.startsWith('/api') || _req.path.startsWith('/auth')) {
+    return res.status(404).json({ error: 'Rota não encontrada.', payload: null });
+  }
+  if (_req.method !== 'GET' && _req.method !== 'HEAD') {
+    return res.status(405).json({ error: 'Método não permitido.', payload: null });
+  }
+  return res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`[OK] Server listening on port ${port}`);
+app.listen(port, host, () => {
+  console.log(`[OK] Server listening on http://${host}:${port}`);
   console.log(`[OK] DB=${DB_DATABASE} HOST=${DB_HOST}:${DB_PORT} USER=${DB_USER}`);
 });
