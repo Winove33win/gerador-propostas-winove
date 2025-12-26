@@ -1,16 +1,34 @@
 
-import React, { useMemo } from 'react';
-import { db } from '../mockDb';
+import React, { useMemo, useEffect, useState } from 'react';
+import { api } from '../api';
 // Fixed: Added missing PlusCircle import
 import { TrendingUp, Users, Files, CheckCircle2, Clock, PlusCircle } from 'lucide-react';
+import { Client, Proposal } from '../types';
 
 interface Props {
   navigateTo: (view: any) => void;
 }
 
 const DashboardView: React.FC<Props> = ({ navigateTo }) => {
-  const proposals = db.proposals.list();
-  const clients = db.clients.list();
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [proposalsResponse, clientsResponse] = await Promise.all([
+          api.proposals.list(),
+          api.clients.list(),
+        ]);
+        setProposals(proposalsResponse);
+        setClients(clientsResponse);
+      } catch (error) {
+        console.warn('Falha ao carregar dados do dashboard.', error);
+      }
+    };
+
+    void loadData();
+  }, []);
   
   const stats = useMemo(() => {
     const totalValue = proposals.reduce((acc, curr) => acc + curr.total_value, 0);
@@ -70,12 +88,12 @@ const DashboardView: React.FC<Props> = ({ navigateTo }) => {
               </div>
             ) : (
               recentProposals.map(proposal => {
-                const client = db.clients.get(proposal.client_id);
+                const client = clients.find(c => c.id === proposal.client_id);
                 return (
                   <div key={proposal.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
                     <div className="flex gap-4 items-center">
                       <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-500">
-                        {client?.name.substring(0, 1) || '?'}
+                        {client?.name?.substring(0, 1) || '?'}
                       </div>
                       <div>
                         <p className="font-semibold text-slate-900">{client?.name || 'Cliente Removido'}</p>

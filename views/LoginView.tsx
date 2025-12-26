@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { db } from '../mockDb';
+import { api } from '../api';
 import { Hexagon, Lock, Mail, Building2, AlertCircle, KeyRound, UserPlus, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { User } from '../types';
 
@@ -19,17 +19,18 @@ const LoginView: React.FC<Props> = ({ onLoginSuccess }) => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    const user = db.auth.login(email, cnpj, password);
-    if (user) {
+  const handleLogin = async () => {
+    try {
+      const user = await api.auth.login(email, cnpj, password);
       onLoginSuccess(user);
-    } else {
+    } catch (error) {
       setError('Credenciais inválidas. Verifique o e-mail, CNPJ e senha.');
+    } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (password !== confirmPassword) {
       setError('As senhas não coincidem.');
       setLoading(false);
@@ -42,40 +43,35 @@ const LoginView: React.FC<Props> = ({ onLoginSuccess }) => {
       return;
     }
 
-    // Tenta criar o usuário
     try {
-      const newUser = db.users.create({
+      const newUser = await api.auth.register({
         name,
         email,
         cnpj_access: cnpj,
         password,
-        role: 'employee' // Novos cadastros via tela pública são funcionários por padrão
       });
 
       setSuccess('Conta criada com sucesso! Redirecionando para o painel...');
       setTimeout(() => {
         onLoginSuccess(newUser);
-      }, 1500);
-    } catch (e) {
+      }, 1200);
+    } catch (error) {
       setError('Erro ao criar conta. Tente novamente.');
       setLoading(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     setLoading(true);
 
-    // Simulação de delay de rede
-    setTimeout(() => {
-      if (isRegistering) {
-        handleRegister();
-      } else {
-        handleLogin();
-      }
-    }, 800);
+    if (isRegistering) {
+      await handleRegister();
+    } else {
+      await handleLogin();
+    }
   };
 
   const inputClasses = "w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-slate-600";

@@ -23,7 +23,7 @@ import EntityListView from './views/EntityListView';
 import ProposalWizard from './views/ProposalWizard';
 import DocumentationView from './views/DocumentationView';
 import LoginView from './views/LoginView';
-import { db } from './mockDb';
+import { api } from './api';
 import { User } from './types';
 
 type ViewType = 'dashboard' | 'companies' | 'clients' | 'services' | 'optionals' | 'terms' | 'proposals' | 'new-proposal' | 'doc';
@@ -35,13 +35,15 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
-    const user = db.auth.getCurrentUser();
-    if (user) setCurrentUser(user);
+    const user = api.auth.getCurrentUser();
+    if (user) {
+      setCurrentUser(user);
+    }
     setIsInitializing(false);
   }, []);
 
   const handleLogout = () => {
-    db.auth.logout();
+    api.auth.logout();
     setCurrentUser(null);
   };
 

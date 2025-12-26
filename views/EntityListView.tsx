@@ -1,8 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
-import { db } from '../mockDb';
-import { EntityType } from '../types';
-import { Plus, Search, Edit3, Trash2, ExternalLink, Download } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { api } from '../api';
+import { Client, EntityType } from '../types';
+import { Plus, Search, Edit3, Trash2, Download } from 'lucide-react';
 import { generateProposalPDF } from '../utils/pdfGenerator';
 
 interface Props {
@@ -15,36 +15,64 @@ const EntityListView: React.FC<Props> = ({ entity, onEdit }) => {
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [editMode, setEditMode] = useState(false);
+  const [data, setData] = useState<any[]>([]);
+  const [clientLookup, setClientLookup] = useState<Record<string, Client>>({});
 
-  // Helper to get the correct repository from the db object to fix indexing errors and potential naming mismatches
-  const getRepository = () => {
-    switch (entity) {
-      case 'company': return db.companies;
-      case 'client': return db.clients;
-      case 'service': return db.services;
-      case 'optional': return db.optionals;
-      case 'term': return db.terms;
-      case 'proposal': return db.proposals;
-      case 'user': return db.users;
-      default: return null;
+  const loadData = useCallback(async () => {
+    try {
+      let items: any[] = [];
+      switch (entity) {
+        case 'company':
+          items = await api.companies.list();
+          break;
+        case 'client':
+          items = await api.clients.list();
+          break;
+        case 'service':
+          items = await api.services.list();
+          break;
+        case 'optional':
+          items = await api.optionals.list();
+          break;
+        case 'term':
+          items = await api.terms.list();
+          break;
+        case 'proposal':
+          items = await api.proposals.list();
+          break;
+        case 'user':
+          items = await api.users.list();
+          break;
+        default:
+          items = [];
+      }
+      setData(items);
+    } catch (error) {
+      console.warn('Falha ao carregar dados da lista.', error);
     }
-  };
+  }, [entity]);
 
-  // Helper to fetch data safely using defined methods for each entity
-  const getEntityData = () => {
-    switch (entity) {
-      case 'company': return db.companies.list();
-      case 'client': return db.clients.list();
-      case 'service': return db.services.list();
-      case 'optional': return db.optionals.list();
-      case 'term': return db.terms.list();
-      case 'proposal': return db.proposals.list();
-      case 'user': return db.users.list();
-      default: return [];
-    }
-  };
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-  const data = getEntityData();
+  useEffect(() => {
+    const loadClients = async () => {
+      if (entity !== 'proposal') return;
+      try {
+        const clients = await api.clients.list();
+        const lookup = clients.reduce<Record<string, Client>>((acc, client) => {
+          acc[client.id] = client;
+          return acc;
+        }, {});
+        setClientLookup(lookup);
+      } catch (error) {
+        console.warn('Falha ao carregar clientes para propostas.', error);
+      }
+    };
+
+    void loadClients();
+  }, [entity]);
 
   const filteredData = useMemo(() => {
     return data.filter((item: any) => {
@@ -57,31 +85,101 @@ const EntityListView: React.FC<Props> = ({ entity, onEdit }) => {
   }, [data, searchTerm, entity]);
 
   // Refactored handleSave to avoid dynamic key access which was causing TS errors
-  const handleSave = () => {
-    const repo: any = getRepository();
-    if (!repo) return;
-
-    if (editMode) {
-      // Check if update exists as 'user' repo doesn't have it defined in mockDb
-      if (repo.update) {
-        repo.update(formData.id, formData);
+  const handleSave = async () => {
+    try {
+      if (editMode) {
+        switch (entity) {
+          case 'company':
+            await api.companies.update(formData.id, formData);
+            break;
+          case 'client':
+            await api.clients.update(formData.id, formData);
+            break;
+          case 'service':
+            await api.services.update(formData.id, formData);
+            break;
+          case 'optional':
+            await api.optionals.update(formData.id, formData);
+            break;
+          case 'term':
+            await api.terms.update(formData.id, formData);
+            break;
+          case 'proposal':
+            await api.proposals.update(formData.id, formData);
+            break;
+          case 'user':
+            await api.users.update(formData.id, formData);
+            break;
+          default:
+            break;
+        }
+      } else {
+        switch (entity) {
+          case 'company':
+            await api.companies.create(formData);
+            break;
+          case 'client':
+            await api.clients.create(formData);
+            break;
+          case 'service':
+            await api.services.create(formData);
+            break;
+          case 'optional':
+            await api.optionals.create(formData);
+            break;
+          case 'term':
+            await api.terms.create(formData);
+            break;
+          case 'proposal':
+            await api.proposals.create(formData);
+            break;
+          case 'user':
+            await api.users.create(formData);
+            break;
+          default:
+            break;
+        }
       }
-    } else {
-      if (repo.create) {
-        repo.create(formData);
-      }
+      await loadData();
+    } catch (error) {
+      console.warn('Falha ao salvar registro.', error);
     }
     setShowModal(false);
     setFormData({});
   };
 
   // Refactored handleDelete to avoid dynamic key access which was causing TS errors
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Deseja realmente excluir este item?')) {
-      const repo: any = getRepository();
-      if (repo && repo.delete) {
-        repo.delete(id);
-        window.location.reload();
+      try {
+        switch (entity) {
+          case 'company':
+            await api.companies.delete(id);
+            break;
+          case 'client':
+            await api.clients.delete(id);
+            break;
+          case 'service':
+            await api.services.delete(id);
+            break;
+          case 'optional':
+            await api.optionals.delete(id);
+            break;
+          case 'term':
+            await api.terms.delete(id);
+            break;
+          case 'proposal':
+            await api.proposals.delete(id);
+            break;
+          case 'user':
+            await api.users.delete(id);
+            break;
+          default:
+            break;
+        }
+        await loadData();
+      } catch (error) {
+        console.warn('Falha ao remover registro.', error);
       }
     }
   };
@@ -354,7 +452,7 @@ const EntityListView: React.FC<Props> = ({ entity, onEdit }) => {
                       <div className="font-bold text-slate-700">
                         {entity === 'service' || entity === 'optional' ? item.description :
                          entity === 'term' ? item.title :
-                         entity === 'proposal' ? `${item.number} - ${db.clients.get(item.client_id)?.name || 'Cliente Removido'}` :
+                         entity === 'proposal' ? `${item.number} - ${clientLookup[item.client_id]?.name || 'Cliente Removido'}` :
                          entity === 'user' ? item.name :
                          item.name}
                       </div>
@@ -379,7 +477,7 @@ const EntityListView: React.FC<Props> = ({ entity, onEdit }) => {
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-1">
                         {entity === 'proposal' && (
-                          <button onClick={() => generateProposalPDF(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all" title="Gerar PDF"><Download size={16} /></button>
+                          <button onClick={() => void generateProposalPDF(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all" title="Gerar PDF"><Download size={16} /></button>
                         )}
                         <button 
                           onClick={() => {
