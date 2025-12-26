@@ -8,6 +8,10 @@ export default defineConfig(() => ({
     host: '0.0.0.0',
   },
   plugins: [react()],
+  build: {
+    outDir: 'controle.winove.com.br/dist',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
