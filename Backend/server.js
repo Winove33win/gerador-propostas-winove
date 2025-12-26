@@ -21,28 +21,35 @@ const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
 const DB_PASS = process.env.DB_PASSWORD ?? process.env.DB_PASS;
 
-if (!DB_USER) throw new Error('DB_USERNAME/DB_USER não definido no ambiente.');
-if (DB_PASS === undefined) throw new Error('DB_PASSWORD/DB_PASS não definido no ambiente.');
-
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 
-if (!JWT_SECRET) throw new Error('JWT_SECRET não definido no ambiente (Plesk).');
+const missingEnv = [];
+if (!DB_USER) missingEnv.push('DB_USERNAME/DB_USER');
+if (DB_PASS === undefined) missingEnv.push('DB_PASSWORD/DB_PASS');
+if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
+
+if (missingEnv.length > 0) {
+  console.warn(`[WARN] Variáveis de ambiente ausentes: ${missingEnv.join(', ')}.`);
+}
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-const dbPool = mysql.createPool({
-  host: DB_HOST,
-  port: DB_PORT,
-  user: DB_USER,
-  password: DB_PASS,
-  database: DB_DATABASE,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+const dbPool =
+  DB_USER && DB_PASS !== undefined
+    ? mysql.createPool({
+        host: DB_HOST,
+        port: DB_PORT,
+        user: DB_USER,
+        password: DB_PASS,
+        database: DB_DATABASE,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+      })
+    : null;
 
 /* =========================
    HELPERS (resposta padrão)
@@ -54,6 +61,9 @@ const fail = (res, status, error, details = undefined) =>
 const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
 const safeQuery = async (sql, params = []) => {
+  if (!dbPool) {
+    throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
+  }
   const [rows] = await dbPool.execute(sql, params);
   return rows;
 };
@@ -83,8 +93,11 @@ const serializeJsonArray = (value) => {
 const isBcryptHash = (v = '') =>
   v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$');
 
-const signToken = (user) =>
-  jwt.sign(
+const signToken = (user) => {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET não definido no ambiente.');
+  }
+  return jwt.sign(
     {
       sub: user.id,
       email: user.email,
@@ -94,6 +107,7 @@ const signToken = (user) =>
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
+};
 
 /* =========================
    RELATIONS (proposals)
@@ -271,6 +285,9 @@ const registerHandler = async (req, res) => {
    HEALTH
 ========================= */
 const healthDbHandler = async (_req, res) => {
+  if (!dbPool) {
+    return fail(res, 503, 'Banco de dados não configurado.');
+  }
   try {
     const [rows] = await dbPool.query('SELECT DATABASE() AS db');
     return ok(res, { ok: true, db: rows?.[0]?.db });
