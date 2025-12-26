@@ -110,6 +110,26 @@ const signToken = (user) => {
   );
 };
 
+const requireAuth = (req, res, next) => {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (!token || scheme?.toLowerCase() !== 'bearer') {
+    return fail(res, 401, 'Token ausente.');
+  }
+
+  if (!JWT_SECRET) {
+    return fail(res, 500, 'JWT_SECRET não definido no ambiente.');
+  }
+
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (error) {
+    return fail(res, 403, 'Token inválido ou expirado.');
+  }
+};
+
 /* =========================
    RELATIONS (proposals)
 ========================= */
@@ -281,6 +301,8 @@ const registerHandler = async (req, res) => {
 
 app.post('/auth/login', loginHandler);
 app.post('/auth/register', registerHandler);
+
+app.use('/api', requireAuth);
 
 /* =========================
    HEALTH
