@@ -12,18 +12,23 @@ const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 3000;
 const distDir = path.join(__dirname, 'dist');
 
+/* =========================
+   ENV / DB CONFIG
+========================= */
 const DB_DATABASE = process.env.DB_DATABASE || process.env.DB_NAME || 'propostas-winove';
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
-const DB_PASS = process.env.DB_PASSWORD || process.env.DB_PASS;
+const DB_PASS = process.env.DB_PASSWORD ?? process.env.DB_PASS;
 
-if (!DB_USER) {
-  throw new Error('DB_USERNAME/DB_USER não definido no ambiente.');
-}
-if (DB_PASS === undefined) {
-  throw new Error('DB_PASSWORD/DB_PASS não definido no ambiente.');
-}
+if (!DB_USER) throw new Error('DB_USERNAME/DB_USER não definido no ambiente.');
+if (DB_PASS === undefined) throw new Error('DB_PASSWORD/DB_PASS não definido no ambiente.');
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
+
+if (!JWT_SECRET) throw new Error('JWT_SECRET não definido no ambiente (Plesk).');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -39,9 +44,12 @@ const dbPool = mysql.createPool({
   queueLimit: 0,
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'troque-isso-agora';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
+/* =========================
+   HELPERS (resposta padrão)
+========================= */
+const ok = (res, payload, status = 200) => res.status(status).json({ payload });
+const fail = (res, status, error, details = undefined) =>
+  res.status(status).json({ error, details, payload: null });
 
 const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
@@ -62,16 +70,34 @@ const parseJsonArray = (value) => {
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
+  } catch {
     return [];
   }
 };
 
 const serializeJsonArray = (value) => {
-  if (!value) return null;
-  return JSON.stringify(value);
+  if (value === undefined) return null;
+  return JSON.stringify(value ?? []);
 };
 
+const isBcryptHash = (v = '') =>
+  v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$');
+
+const signToken = (user) =>
+  jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      cnpj_access: normalizeCnpj(user.cnpj_access || ''),
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+/* =========================
+   RELATIONS (proposals)
+========================= */
 const readRelationMap = async (table, column, proposalIds = []) => {
   if (proposalIds.length === 0) return new Map();
   try {
@@ -81,46 +107,60 @@ const readRelationMap = async (table, column, proposalIds = []) => {
     );
     const map = new Map();
     rows.forEach((row) => {
-      if (!map.has(row.proposal_id)) {
-        map.set(row.proposal_id, []);
-      }
+      if (!map.has(row.proposal_id)) map.set(row.proposal_id, []);
       map.get(row.proposal_id).push(row.related_id);
     });
     return map;
   } catch (error) {
-    if (error?.code === 'ER_NO_SUCH_TABLE') {
-      return new Map();
-    }
+    if (error?.code === 'ER_NO_SUCH_TABLE') return new Map();
     throw error;
   }
 };
 
 const attachProposalRelations = async (proposals) => {
-  const ids = proposals.map((proposal) => proposal.id);
+  const ids = proposals.map((p) => p.id);
   const servicesMap = await readRelationMap('proposal_services', 'service_id', ids);
   const termsMap = await readRelationMap('proposal_terms', 'term_id', ids);
   const optionalsMap = await readRelationMap('proposal_optionals', 'optional_id', ids);
 
-  return proposals.map((proposal) => ({
-    ...proposal,
-    services_ids: servicesMap.get(proposal.id) || [],
-    terms_ids: termsMap.get(proposal.id) || [],
-    optionals_ids: optionalsMap.get(proposal.id) || [],
+  return proposals.map((p) => ({
+    ...p,
+    services_ids: servicesMap.get(p.id) || [],
+    terms_ids: termsMap.get(p.id) || [],
+    optionals_ids: optionalsMap.get(p.id) || [],
   }));
 };
 
+const writeProposalRelations = async (proposalId, table, column, ids = []) => {
+  try {
+    await safeQuery(`DELETE FROM ${table} WHERE proposal_id = ?`, [proposalId]);
+    if (!ids || ids.length === 0) return;
+
+    const values = ids.map((id) => [proposalId, id]);
+    // mysql2 suporta "VALUES ?" com query (não execute)
+    await dbPool.query(`INSERT INTO ${table} (proposal_id, ${column}) VALUES ?`, [values]);
+  } catch (error) {
+    if (error?.code !== 'ER_NO_SUCH_TABLE') throw error;
+  }
+};
+
+/* =========================
+   AUTH ROUTES
+========================= */
 const loginHandler = async (req, res) => {
   try {
-    const payload = req.body?.auth || req.body;
-    const email = payload?.email?.trim();
-    const cnpjAccess = payload?.cnpj_access;
-    const password = payload?.password;
+    const body = req.body?.auth || req.body || {};
+    const email = body?.email?.trim();
+    const cnpjAccess = body?.cnpj_access;
+    const password = body?.password;
 
     if (!email || !cnpjAccess || !password) {
-      return res.status(400).json({ error: 'Credenciais incompletas.' });
+      return fail(res, 400, 'Credenciais incompletas.');
     }
 
     const normalizedCnpj = normalizeCnpj(cnpjAccess);
+
+    // busca usuário por email
     const rows = await safeQuery(
       `SELECT id, name, email, cnpj_access, password, role
        FROM users
@@ -130,72 +170,75 @@ const loginHandler = async (req, res) => {
     );
 
     const user = rows[0];
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciais inválidas.' });
-    }
+    if (!user) return fail(res, 401, 'Credenciais inválidas.');
 
+    // valida CNPJ (tripla validação)
     if (normalizeCnpj(user.cnpj_access) !== normalizedCnpj) {
-      return res.status(401).json({ error: 'Credenciais inválidas.' });
+      return fail(res, 401, 'Credenciais inválidas.');
     }
 
+    // valida senha (bcrypt ou texto puro)
     const stored = user.password || '';
-    const isBcrypt = stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$');
-    const ok = isBcrypt ? await bcrypt.compare(password, stored) : stored === password;
-    if (!ok) {
-      return res.status(401).json({ error: 'Credenciais inválidas.' });
-    }
+    const okPass = isBcryptHash(stored)
+      ? await bcrypt.compare(password, stored)
+      : stored === password;
 
-    if (!isBcrypt) {
+    if (!okPass) return fail(res, 401, 'Credenciais inválidas.');
+
+    // migra senha texto puro -> bcrypt no 1º login bem sucedido
+    if (!isBcryptHash(stored)) {
       const newHash = await bcrypt.hash(password, SALT_ROUNDS);
       await safeQuery('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
+      user.password = newHash;
     }
 
-    const token = jwt.sign(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-        cnpj_access: normalizeCnpj(user.cnpj_access || ''),
-      },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
-    );
+    const token = signToken(user);
 
-    return res.json({ token, user: sanitizeUser(user) });
+    // ✅ PADRÃO para o front: sempre payload
+    return ok(res, { token, user: sanitizeUser(user) });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro interno ao autenticar.' });
+    console.error('AUTH_LOGIN_ERROR:', error);
+    return fail(res, 500, 'Erro interno ao autenticar.');
   }
 };
 
 const registerHandler = async (req, res) => {
   try {
-    const payload = req.body?.auth || req.body;
-    const name = payload?.name;
-    const email = payload?.email?.trim();
-    const cnpjAccess = payload?.cnpj_access;
-    const password = payload?.password;
+    const body = req.body?.auth || req.body || {};
+    const name = body?.name?.trim();
+    const email = body?.email?.trim();
+    const cnpjAccess = body?.cnpj_access;
+    const password = body?.password;
+
     if (!name || !email || !cnpjAccess || !password) {
-      return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
+      return fail(res, 400, 'Dados obrigatórios ausentes.');
+    }
+
+    const cnpjNormalized = normalizeCnpj(cnpjAccess);
+    if (cnpjNormalized.length !== 14) {
+      return fail(res, 400, 'CNPJ inválido. Use 14 dígitos.');
     }
 
     const existing = await safeQuery('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
     if (existing.length > 0) {
-      return res.status(409).json({ error: 'E-mail já cadastrado.' });
+      return fail(res, 409, 'E-mail já cadastrado.');
     }
 
     const id = crypto.randomUUID();
-    const cnpjNormalized = normalizeCnpj(cnpjAccess);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
     await safeQuery(
       'INSERT INTO users (id, name, email, cnpj_access, password, role) VALUES (?, ?, ?, ?, ?, ?)',
       [id, name, email, cnpjNormalized, passwordHash, 'employee']
     );
 
-    return res.status(201).json({
-      user: sanitizeUser({ id, name, email, cnpj_access: cnpjNormalized, role: 'employee' }),
-    });
+    const user = { id, name, email, cnpj_access: cnpjNormalized, role: 'employee' };
+    const token = signToken(user);
+
+    return ok(res, { token, user }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro interno ao registrar.' });
+    console.error('AUTH_REGISTER_ERROR:', error);
+    return fail(res, 500, 'Erro interno ao registrar.');
   }
 };
 
@@ -206,538 +249,497 @@ authRouter.post('/register', registerHandler);
 app.use('/auth', authRouter);
 app.use('/api/auth', authRouter);
 
+/* =========================
+   HEALTH
+========================= */
 const healthDbHandler = async (_req, res) => {
   try {
     const [rows] = await dbPool.query('SELECT DATABASE() AS db');
-    return res.json({ ok: true, db: rows?.[0]?.db });
+    return ok(res, { ok: true, db: rows?.[0]?.db });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: error.message });
+    console.error('HEALTH_DB_ERROR:', error);
+    return fail(res, 500, 'Falha no health check do banco.', error?.message);
   }
 };
 
 app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 
+/* =========================
+   COMPANIES
+========================= */
 app.get('/api/companies', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM companies ORDER BY name ASC');
-    return res.json({ data: rows });
+    return ok(res, { data: rows });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar empresas.' });
+    console.error('COMPANIES_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar empresas.');
   }
 });
 
 app.get('/api/companies/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM companies WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM companies WHERE id = ? LIMIT 1', [req.params.id]);
     const company = rows[0];
-    if (!company) {
-      return res.status(404).json({ error: 'Empresa não encontrada.' });
-    }
-    return res.json({ data: company });
+    if (!company) return fail(res, 404, 'Empresa não encontrada.');
+    return ok(res, { data: company });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar empresa.' });
+    console.error('COMPANIES_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar empresa.');
   }
 });
 
 app.post('/api/companies', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
+    const p = req.body || {};
     const company = {
-      id,
-      name: payload.name,
-      cnpj: payload.cnpj,
-      address: payload.address || null,
-      email: payload.email || null,
-      phone: payload.phone || null,
-      bank_info: payload.bank_info || null,
+      id: p.id || crypto.randomUUID(),
+      name: p.name,
+      cnpj: p.cnpj,
+      address: p.address || null,
+      email: p.email || null,
+      phone: p.phone || null,
+      bank_info: p.bank_info || null,
     };
+
     await safeQuery(
       `INSERT INTO companies (id, name, cnpj, address, email, phone, bank_info)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [company.id, company.name, company.cnpj, company.address, company.email, company.phone, company.bank_info]
     );
-    return res.status(201).json({ data: company });
+
+    return ok(res, { data: company }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar empresa.' });
+    console.error('COMPANIES_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar empresa.');
   }
 });
 
 app.put('/api/companies/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
+    const p = req.body || {};
     await safeQuery(
       `UPDATE companies
        SET name = ?, cnpj = ?, address = ?, email = ?, phone = ?, bank_info = ?
        WHERE id = ?`,
-      [
-        payload.name,
-        payload.cnpj,
-        payload.address || null,
-        payload.email || null,
-        payload.phone || null,
-        payload.bank_info || null,
-        id,
-      ]
+      [p.name, p.cnpj, p.address || null, p.email || null, p.phone || null, p.bank_info || null, req.params.id]
     );
-    return res.json({ data: { id } });
+
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar empresa.' });
+    console.error('COMPANIES_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar empresa.');
   }
 });
 
 app.delete('/api/companies/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM companies WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM companies WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover empresa.' });
+    console.error('COMPANIES_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover empresa.');
   }
 });
 
+/* =========================
+   SERVICES
+========================= */
 app.get('/api/services', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM services ORDER BY description ASC');
-    const data = rows.map((row) => ({
-      ...row,
-      benefits: parseJsonArray(row.benefits),
-    }));
-    return res.json({ data });
+    const data = rows.map((row) => ({ ...row, benefits: parseJsonArray(row.benefits) }));
+    return ok(res, { data });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar serviços.' });
+    console.error('SERVICES_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar serviços.');
   }
 });
 
 app.get('/api/services/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM services WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM services WHERE id = ? LIMIT 1', [req.params.id]);
     const service = rows[0];
-    if (!service) {
-      return res.status(404).json({ error: 'Serviço não encontrado.' });
-    }
-    return res.json({ data: { ...service, benefits: parseJsonArray(service.benefits) } });
+    if (!service) return fail(res, 404, 'Serviço não encontrado.');
+    return ok(res, { data: { ...service, benefits: parseJsonArray(service.benefits) } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar serviço.' });
+    console.error('SERVICES_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar serviço.');
   }
 });
 
 app.post('/api/services', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
+    const p = req.body || {};
     const service = {
-      id,
-      description: payload.description,
-      detailed_description: payload.detailed_description || null,
-      benefits: payload.benefits || [],
-      value: payload.value || 0,
-      unit: payload.unit || 'fixo',
+      id: p.id || crypto.randomUUID(),
+      description: p.description,
+      detailed_description: p.detailed_description || null,
+      benefits: p.benefits || [],
+      value: p.value || 0,
+      unit: p.unit || 'fixo',
     };
+
     await safeQuery(
       `INSERT INTO services (id, description, detailed_description, benefits, value, unit)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        service.id,
-        service.description,
-        service.detailed_description,
-        serializeJsonArray(service.benefits),
-        service.value,
-        service.unit,
-      ]
+      [service.id, service.description, service.detailed_description, serializeJsonArray(service.benefits), service.value, service.unit]
     );
-    return res.status(201).json({ data: service });
+
+    return ok(res, { data: service }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar serviço.' });
+    console.error('SERVICES_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar serviço.');
   }
 });
 
 app.put('/api/services/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
+    const p = req.body || {};
     await safeQuery(
       `UPDATE services
        SET description = ?, detailed_description = ?, benefits = ?, value = ?, unit = ?
        WHERE id = ?`,
-      [
-        payload.description,
-        payload.detailed_description || null,
-        serializeJsonArray(payload.benefits || []),
-        payload.value || 0,
-        payload.unit || 'fixo',
-        id,
-      ]
+      [p.description, p.detailed_description || null, serializeJsonArray(p.benefits || []), p.value || 0, p.unit || 'fixo', req.params.id]
     );
-    return res.json({ data: { id } });
+
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar serviço.' });
+    console.error('SERVICES_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar serviço.');
   }
 });
 
 app.delete('/api/services/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM services WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM services WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover serviço.' });
+    console.error('SERVICES_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover serviço.');
   }
 });
 
+/* =========================
+   OPTIONALS
+========================= */
 app.get('/api/optionals', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM optionals ORDER BY description ASC');
-    return res.json({ data: rows });
+    return ok(res, { data: rows });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar opcionais.' });
+    console.error('OPTIONALS_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar opcionais.');
   }
 });
 
 app.get('/api/optionals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM optionals WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM optionals WHERE id = ? LIMIT 1', [req.params.id]);
     const optional = rows[0];
-    if (!optional) {
-      return res.status(404).json({ error: 'Opcional não encontrado.' });
-    }
-    return res.json({ data: optional });
+    if (!optional) return fail(res, 404, 'Opcional não encontrado.');
+    return ok(res, { data: optional });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar opcional.' });
+    console.error('OPTIONALS_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar opcional.');
   }
 });
 
 app.post('/api/optionals', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
-    const optional = {
-      id,
-      description: payload.description,
-      value: payload.value || 0,
-    };
-    await safeQuery(
-      `INSERT INTO optionals (id, description, value) VALUES (?, ?, ?)`,
-      [optional.id, optional.description, optional.value]
-    );
-    return res.status(201).json({ data: optional });
+    const p = req.body || {};
+    const optional = { id: p.id || crypto.randomUUID(), description: p.description, value: p.value || 0 };
+
+    await safeQuery(`INSERT INTO optionals (id, description, value) VALUES (?, ?, ?)`, [
+      optional.id,
+      optional.description,
+      optional.value,
+    ]);
+
+    return ok(res, { data: optional }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar opcional.' });
+    console.error('OPTIONALS_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar opcional.');
   }
 });
 
 app.put('/api/optionals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
-    await safeQuery(
-      `UPDATE optionals SET description = ?, value = ? WHERE id = ?`,
-      [payload.description, payload.value || 0, id]
-    );
-    return res.json({ data: { id } });
+    const p = req.body || {};
+    await safeQuery(`UPDATE optionals SET description = ?, value = ? WHERE id = ?`, [p.description, p.value || 0, req.params.id]);
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar opcional.' });
+    console.error('OPTIONALS_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar opcional.');
   }
 });
 
 app.delete('/api/optionals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM optionals WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM optionals WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover opcional.' });
+    console.error('OPTIONALS_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover opcional.');
   }
 });
 
+/* =========================
+   TERMS
+========================= */
 app.get('/api/terms', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM terms ORDER BY title ASC');
-    return res.json({ data: rows });
+    return ok(res, { data: rows });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar termos.' });
+    console.error('TERMS_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar termos.');
   }
 });
 
 app.get('/api/terms/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM terms WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM terms WHERE id = ? LIMIT 1', [req.params.id]);
     const term = rows[0];
-    if (!term) {
-      return res.status(404).json({ error: 'Termo não encontrado.' });
-    }
-    return res.json({ data: term });
+    if (!term) return fail(res, 404, 'Termo não encontrado.');
+    return ok(res, { data: term });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar termo.' });
+    console.error('TERMS_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar termo.');
   }
 });
 
 app.post('/api/terms', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
-    const term = {
-      id,
-      title: payload.title,
-      content: payload.content,
-    };
-    await safeQuery(
-      `INSERT INTO terms (id, title, content) VALUES (?, ?, ?)`,
-      [term.id, term.title, term.content]
-    );
-    return res.status(201).json({ data: term });
+    const p = req.body || {};
+    const term = { id: p.id || crypto.randomUUID(), title: p.title, content: p.content };
+
+    await safeQuery(`INSERT INTO terms (id, title, content) VALUES (?, ?, ?)`, [term.id, term.title, term.content]);
+    return ok(res, { data: term }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar termo.' });
+    console.error('TERMS_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar termo.');
   }
 });
 
 app.put('/api/terms/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
-    await safeQuery(
-      `UPDATE terms SET title = ?, content = ? WHERE id = ?`,
-      [payload.title, payload.content, id]
-    );
-    return res.json({ data: { id } });
+    const p = req.body || {};
+    await safeQuery(`UPDATE terms SET title = ?, content = ? WHERE id = ?`, [p.title, p.content, req.params.id]);
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar termo.' });
+    console.error('TERMS_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar termo.');
   }
 });
 
 app.delete('/api/terms/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM terms WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM terms WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover termo.' });
+    console.error('TERMS_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover termo.');
   }
 });
 
+/* =========================
+   USERS (admin crud)
+   Obs: mantém como estava, mas cuidado ao criar/atualizar senha
+========================= */
 app.get('/api/users', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM users ORDER BY name ASC');
-    const users = rows.map((user) => sanitizeUser(user));
-    return res.json({ data: users });
+    return ok(res, { data: rows.map(sanitizeUser) });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar usuários.' });
+    console.error('USERS_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar usuários.');
   }
 });
 
 app.get('/api/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [req.params.id]);
     const user = rows[0];
-    if (!user) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
-    }
-    return res.json({ data: sanitizeUser(user) });
+    if (!user) return fail(res, 404, 'Usuário não encontrado.');
+    return ok(res, { data: sanitizeUser(user) });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar usuário.' });
+    console.error('USERS_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar usuário.');
   }
 });
 
 app.post('/api/users', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
+    const p = req.body || {};
+    const id = p.id || crypto.randomUUID();
+
+    // se vier password, já salva como bcrypt
+    const passwordHash = p.password ? await bcrypt.hash(p.password, SALT_ROUNDS) : null;
+
     const user = {
       id,
-      name: payload.name,
-      email: payload.email,
-      cnpj_access: payload.cnpj_access,
-      password: payload.password,
-      role: payload.role || 'employee',
+      name: p.name,
+      email: p.email,
+      cnpj_access: normalizeCnpj(p.cnpj_access || ''),
+      password: passwordHash,
+      role: p.role || 'employee',
     };
+
     await safeQuery(
       'INSERT INTO users (id, name, email, cnpj_access, password, role) VALUES (?, ?, ?, ?, ?, ?)',
       [user.id, user.name, user.email, user.cnpj_access, user.password, user.role]
     );
-    return res.status(201).json({ data: sanitizeUser(user) });
+
+    return ok(res, { data: sanitizeUser(user) }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar usuário.' });
+    console.error('USERS_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar usuário.');
   }
 });
 
 app.put('/api/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
+    const p = req.body || {};
+    const passwordHash = p.password ? await bcrypt.hash(p.password, SALT_ROUNDS) : null;
+
     await safeQuery(
       `UPDATE users
        SET name = ?, email = ?, cnpj_access = ?, password = COALESCE(?, password), role = ?
        WHERE id = ?`,
-      [
-        payload.name,
-        payload.email,
-        payload.cnpj_access,
-        payload.password || null,
-        payload.role || 'employee',
-        id,
-      ]
+      [p.name, p.email, normalizeCnpj(p.cnpj_access || ''), passwordHash, p.role || 'employee', req.params.id]
     );
-    return res.json({ data: { id } });
+
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar usuário.' });
+    console.error('USERS_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar usuário.');
   }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM users WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM users WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover usuário.' });
+    console.error('USERS_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover usuário.');
   }
 });
 
+/* =========================
+   CLIENTS
+========================= */
 app.get('/api/clients', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM clients ORDER BY name ASC');
-    return res.json({ data: rows });
+    return ok(res, { data: rows });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar clientes.' });
+    console.error('CLIENTS_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar clientes.');
   }
 });
 
 app.get('/api/clients/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM clients WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM clients WHERE id = ? LIMIT 1', [req.params.id]);
     const client = rows[0];
-    if (!client) {
-      return res.status(404).json({ error: 'Cliente não encontrado.' });
-    }
-    return res.json({ data: client });
+    if (!client) return fail(res, 404, 'Cliente não encontrado.');
+    return ok(res, { data: client });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar cliente.' });
+    console.error('CLIENTS_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar cliente.');
   }
 });
 
 app.post('/api/clients', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
+    const p = req.body || {};
     const client = {
-      id,
-      name: payload.name,
-      document: payload.document,
-      address: payload.address || null,
-      person_name: payload.person_name || null,
-      job_title: payload.job_title || null,
-      email: payload.email || null,
-      phone: payload.phone || null,
+      id: p.id || crypto.randomUUID(),
+      name: p.name,
+      document: p.document,
+      address: p.address || null,
+      person_name: p.person_name || null,
+      job_title: p.job_title || null,
+      email: p.email || null,
+      phone: p.phone || null,
     };
+
     await safeQuery(
       `INSERT INTO clients (id, name, document, address, person_name, job_title, email, phone)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        client.id,
-        client.name,
-        client.document,
-        client.address,
-        client.person_name,
-        client.job_title,
-        client.email,
-        client.phone,
-      ]
+      [client.id, client.name, client.document, client.address, client.person_name, client.job_title, client.email, client.phone]
     );
-    return res.status(201).json({ data: client });
+
+    return ok(res, { data: client }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar cliente.' });
+    console.error('CLIENTS_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar cliente.');
   }
 });
 
 app.put('/api/clients/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
+    const p = req.body || {};
     await safeQuery(
       `UPDATE clients
        SET name = ?, document = ?, address = ?, person_name = ?, job_title = ?, email = ?, phone = ?
        WHERE id = ?`,
-      [
-        payload.name,
-        payload.document,
-        payload.address || null,
-        payload.person_name || null,
-        payload.job_title || null,
-        payload.email || null,
-        payload.phone || null,
-        id,
-      ]
+      [p.name, p.document, p.address || null, p.person_name || null, p.job_title || null, p.email || null, p.phone || null, req.params.id]
     );
-    return res.json({ data: { id } });
+
+    return ok(res, { data: { id: req.params.id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar cliente.' });
+    console.error('CLIENTS_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar cliente.');
   }
 });
 
 app.delete('/api/clients/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    await safeQuery('DELETE FROM clients WHERE id = ?', [id]);
+    await safeQuery('DELETE FROM clients WHERE id = ?', [req.params.id]);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover cliente.' });
+    console.error('CLIENTS_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover cliente.');
   }
 });
 
-const writeProposalRelations = async (proposalId, table, column, ids = []) => {
-  try {
-    await safeQuery(`DELETE FROM ${table} WHERE proposal_id = ?`, [proposalId]);
-    if (ids.length === 0) return;
-    const values = ids.map((id) => [proposalId, id]);
-    await dbPool.query(
-      `INSERT INTO ${table} (proposal_id, ${column}) VALUES ?`,
-      [values]
-    );
-  } catch (error) {
-    if (error?.code !== 'ER_NO_SUCH_TABLE') {
-      throw error;
-    }
-  }
-};
-
+/* =========================
+   PROPOSALS
+========================= */
 app.get('/api/proposals', async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM proposals ORDER BY created_at DESC');
     const data = await attachProposalRelations(rows);
-    return res.json({ data });
+    return ok(res, { data });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao listar propostas.' });
+    console.error('PROPOSALS_LIST_ERROR:', error);
+    return fail(res, 500, 'Erro ao listar propostas.');
   }
 });
 
 app.get('/api/proposals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const rows = await safeQuery('SELECT * FROM proposals WHERE id = ? LIMIT 1', [id]);
+    const rows = await safeQuery('SELECT * FROM proposals WHERE id = ? LIMIT 1', [req.params.id]);
     const proposal = rows[0];
-    if (!proposal) {
-      return res.status(404).json({ error: 'Proposta não encontrada.' });
-    }
+    if (!proposal) return fail(res, 404, 'Proposta não encontrada.');
     const [data] = await attachProposalRelations([proposal]);
-    return res.json({ data });
+    return ok(res, { data });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao buscar proposta.' });
+    console.error('PROPOSALS_GET_ERROR:', error);
+    return fail(res, 500, 'Erro ao buscar proposta.');
   }
 });
 
 app.post('/api/proposals', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const id = payload.id || crypto.randomUUID();
-    const number = payload.number || `PRP-${new Date().getFullYear()}-${Date.now()}`;
+    const p = req.body || {};
+    const id = p.id || crypto.randomUUID();
+    const number = p.number || `PRP-${new Date().getFullYear()}-${Date.now()}`;
+
     await safeQuery(
       `INSERT INTO proposals
        (id, number, client_id, company_id, status, total_value, discount, deadline, portfolio_url, domain, platform, notes, expiry_date)
@@ -745,82 +747,90 @@ app.post('/api/proposals', async (req, res) => {
       [
         id,
         number,
-        payload.client_id || null,
-        payload.company_id || null,
-        payload.status || 'rascunho',
-        payload.total_value || 0,
-        payload.discount || 0,
-        payload.deadline || null,
-        payload.portfolio_url || null,
-        payload.domain || null,
-        payload.platform || null,
-        payload.notes || null,
-        payload.expiry_date || null,
+        p.client_id || null,
+        p.company_id || null,
+        p.status || 'rascunho',
+        p.total_value || 0,
+        p.discount || 0,
+        p.deadline || null,
+        p.portfolio_url || null,
+        p.domain || null,
+        p.platform || null,
+        p.notes || null,
+        p.expiry_date || null,
       ]
     );
 
-    await writeProposalRelations(id, 'proposal_services', 'service_id', payload.services_ids || []);
-    await writeProposalRelations(id, 'proposal_terms', 'term_id', payload.terms_ids || []);
-    await writeProposalRelations(id, 'proposal_optionals', 'optional_id', payload.optionals_ids || []);
+    await writeProposalRelations(id, 'proposal_services', 'service_id', p.services_ids || []);
+    await writeProposalRelations(id, 'proposal_terms', 'term_id', p.terms_ids || []);
+    await writeProposalRelations(id, 'proposal_optionals', 'optional_id', p.optionals_ids || []);
 
-    return res.status(201).json({ data: { id, number } });
+    return ok(res, { data: { id, number } }, 201);
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao criar proposta.' });
+    console.error('PROPOSALS_CREATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao criar proposta.');
   }
 });
 
 app.put('/api/proposals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const payload = req.body || {};
+    const p = req.body || {};
+    const id = req.params.id;
+
     await safeQuery(
       `UPDATE proposals
        SET client_id = ?, company_id = ?, status = ?, total_value = ?, discount = ?, deadline = ?, portfolio_url = ?, domain = ?, platform = ?, notes = ?, expiry_date = ?
        WHERE id = ?`,
       [
-        payload.client_id || null,
-        payload.company_id || null,
-        payload.status || 'rascunho',
-        payload.total_value || 0,
-        payload.discount || 0,
-        payload.deadline || null,
-        payload.portfolio_url || null,
-        payload.domain || null,
-        payload.platform || null,
-        payload.notes || null,
-        payload.expiry_date || null,
+        p.client_id || null,
+        p.company_id || null,
+        p.status || 'rascunho',
+        p.total_value || 0,
+        p.discount || 0,
+        p.deadline || null,
+        p.portfolio_url || null,
+        p.domain || null,
+        p.platform || null,
+        p.notes || null,
+        p.expiry_date || null,
         id,
       ]
     );
 
-    await writeProposalRelations(id, 'proposal_services', 'service_id', payload.services_ids || []);
-    await writeProposalRelations(id, 'proposal_terms', 'term_id', payload.terms_ids || []);
-    await writeProposalRelations(id, 'proposal_optionals', 'optional_id', payload.optionals_ids || []);
+    await writeProposalRelations(id, 'proposal_services', 'service_id', p.services_ids || []);
+    await writeProposalRelations(id, 'proposal_terms', 'term_id', p.terms_ids || []);
+    await writeProposalRelations(id, 'proposal_optionals', 'optional_id', p.optionals_ids || []);
 
-    return res.json({ data: { id } });
+    return ok(res, { data: { id } });
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao atualizar proposta.' });
+    console.error('PROPOSALS_UPDATE_ERROR:', error);
+    return fail(res, 500, 'Erro ao atualizar proposta.');
   }
 });
 
 app.delete('/api/proposals/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
     await safeQuery('DELETE FROM proposals WHERE id = ?', [id]);
     await writeProposalRelations(id, 'proposal_services', 'service_id', []);
     await writeProposalRelations(id, 'proposal_terms', 'term_id', []);
     await writeProposalRelations(id, 'proposal_optionals', 'optional_id', []);
     return res.status(204).send();
   } catch (error) {
-    return res.status(500).json({ error: 'Erro ao remover proposta.' });
+    console.error('PROPOSALS_DELETE_ERROR:', error);
+    return fail(res, 500, 'Erro ao remover proposta.');
   }
 });
 
+/* =========================
+   STATIC + SPA FALLBACK
+========================= */
 app.use(express.static(distDir));
 app.get('*', (_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
 app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+  console.log(`[OK] Server listening on port ${port}`);
+  console.log(`[OK] DB=${DB_DATABASE} HOST=${DB_HOST}:${DB_PORT} USER=${DB_USER}`);
 });
