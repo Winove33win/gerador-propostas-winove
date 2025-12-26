@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,7 +10,7 @@ import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 3333);
 const host = '0.0.0.0';
 const distDir = path.join(__dirname, 'dist');
 
