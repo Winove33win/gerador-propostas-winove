@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,17 +12,17 @@ const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 3000;
 const distDir = path.join(__dirname, 'dist');
 
-const DB_DATABASE =
-  process.env.DB_DATABASE ||
-  process.env.DB_NAME ||
-  'propostas-winove';
+const DB_DATABASE = process.env.DB_DATABASE || process.env.DB_NAME || 'propostas-winove';
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
 const DB_PASS = process.env.DB_PASSWORD || process.env.DB_PASS;
 
-if (!DB_USER || !DB_PASS) {
-  throw new Error('DB_USER/DB_PASS não configurados nas variáveis de ambiente.');
+if (!DB_USER) {
+  throw new Error('DB_USERNAME/DB_USER não definido no ambiente.');
+}
+if (DB_PASS === undefined) {
+  throw new Error('DB_PASSWORD/DB_PASS não definido no ambiente.');
 }
 
 const app = express();
@@ -38,7 +39,9 @@ const dbPool = mysql.createPool({
   queueLimit: 0,
 });
 
-const SALT_ROUNDS = 12;
+const JWT_SECRET = process.env.JWT_SECRET || 'troque-isso-agora';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 
 const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
@@ -135,12 +138,30 @@ const loginHandler = async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
-    const ok = await bcrypt.compare(password, user.password);
+    const stored = user.password || '';
+    const isBcrypt = stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$');
+    const ok = isBcrypt ? await bcrypt.compare(password, stored) : stored === password;
     if (!ok) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
-    return res.json({ user: sanitizeUser(user) });
+    if (!isBcrypt) {
+      const newHash = await bcrypt.hash(password, SALT_ROUNDS);
+      await safeQuery('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
+    }
+
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        cnpj_access: normalizeCnpj(user.cnpj_access || ''),
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    return res.json({ token, user: sanitizeUser(user) });
   } catch (error) {
     return res.status(500).json({ error: 'Erro interno ao autenticar.' });
   }
@@ -148,7 +169,11 @@ const loginHandler = async (req, res) => {
 
 const registerHandler = async (req, res) => {
   try {
-    const { name, email, cnpj_access: cnpjAccess, password } = req.body || {};
+    const payload = req.body?.auth || req.body;
+    const name = payload?.name;
+    const email = payload?.email?.trim();
+    const cnpjAccess = payload?.cnpj_access;
+    const password = payload?.password;
     if (!name || !email || !cnpjAccess || !password) {
       return res.status(400).json({ error: 'Dados obrigatórios ausentes.' });
     }
