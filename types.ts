@@ -4,7 +4,7 @@ export interface User {
   name: string;
   email: string;
   cnpj_access: string; 
-  password: string; // Novo campo para senha dedicada
+  password?: string; // Novo campo para senha dedicada
   role: 'admin' | 'employee';
 }
 

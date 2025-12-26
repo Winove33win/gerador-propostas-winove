@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../mockDb';
+import { api } from '../api';
 import { Company, Client, Service, Optional, Term, Proposal } from '../types';
-import { Check, ChevronRight, ChevronLeft, Save, Download, Link2, Hexagon } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Save, Download, Hexagon } from 'lucide-react';
 import { generateProposalPDF } from '../utils/pdfGenerator';
 
 interface Props {
@@ -21,6 +21,7 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
   const [discount, setDiscount] = useState(0);
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState<Proposal['status']>('rascunho');
+  const [proposalNumber, setProposalNumber] = useState<string | null>(null);
 
   // New specific fields
   const [deadline, setDeadline] = useState('20 Dias úteis');
@@ -28,38 +29,73 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
   const [domain, setDomain] = useState('http://');
   const [platform, setPlatform] = useState('Wix Studio');
 
-  const companies = db.companies.list();
-  const clients = db.clients.list();
-  const servicesList = db.services.list();
-  const optionalsList = db.optionals.list();
-  const termsList = db.terms.list();
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [servicesList, setServicesList] = useState<Service[]>([]);
+  const [optionalsList, setOptionalsList] = useState<Optional[]>([]);
+  const [termsList, setTermsList] = useState<Term[]>([]);
 
   useEffect(() => {
-    if (id) {
-      const p = db.proposals.get(id);
-      if (p) {
-        setSelectedCompanyId(p.company_id);
-        setSelectedClientId(p.client_id);
-        setSelectedServices(p.services_ids);
-        setSelectedOptionals(p.optionals_ids);
-        setSelectedTerms(p.terms_ids);
-        setDiscount(p.discount);
-        setNotes(p.notes || '');
-        setStatus(p.status);
-        setDeadline(p.deadline);
-        setPortfolioUrl(p.portfolio_url || '');
-        setDomain(p.domain || '');
-        setPlatform(p.platform || '');
+    const loadLists = async () => {
+      try {
+        const [companiesResponse, clientsResponse, servicesResponse, optionalsResponse, termsResponse] = await Promise.all([
+          api.companies.list(),
+          api.clients.list(),
+          api.services.list(),
+          api.optionals.list(),
+          api.terms.list(),
+        ]);
+        setCompanies(companiesResponse);
+        setClients(clientsResponse);
+        setServicesList(servicesResponse);
+        setOptionalsList(optionalsResponse);
+        setTermsList(termsResponse);
+      } catch (error) {
+        console.warn('Falha ao carregar dados da proposta.', error);
       }
-    } else {
-      // Pré-selecionar empresa Winove por padrão
-      const winove = companies.find(c => c.name === 'Winove Online');
-      if (winove) setSelectedCompanyId(winove.id);
-      
-      // Pré-selecionar TODOS os termos por padrão em nova proposta
+    };
+
+    void loadLists();
+  }, []);
+
+  useEffect(() => {
+    const loadProposal = async () => {
+      if (!id) return;
+      try {
+        const proposal = await api.proposals.get(id);
+        setSelectedCompanyId(proposal.company_id);
+        setSelectedClientId(proposal.client_id);
+        setSelectedServices(proposal.services_ids || []);
+        setSelectedOptionals(proposal.optionals_ids || []);
+        setSelectedTerms(proposal.terms_ids || []);
+        setDiscount(proposal.discount || 0);
+        setNotes(proposal.notes || '');
+        setStatus(proposal.status);
+        setDeadline(proposal.deadline || '20 Dias úteis');
+        setPortfolioUrl(proposal.portfolio_url || '');
+        setDomain(proposal.domain || '');
+        setPlatform(proposal.platform || '');
+        setProposalNumber(proposal.number);
+      } catch (error) {
+        console.warn('Falha ao carregar proposta.', error);
+      }
+    };
+
+    void loadProposal();
+  }, [id]);
+
+  useEffect(() => {
+    if (id || companies.length === 0) return;
+    const winove = companies.find(c => c.name === 'Winove Online');
+    if (winove && !selectedCompanyId) setSelectedCompanyId(winove.id);
+  }, [companies, id, selectedCompanyId]);
+
+  useEffect(() => {
+    if (id || termsList.length === 0) return;
+    if (selectedTerms.length === 0) {
       setSelectedTerms(termsList.map(t => t.id));
     }
-  }, [id, termsList]);
+  }, [id, termsList, selectedTerms.length]);
 
   const totalValue = useMemo(() => {
     const sValue = servicesList.filter(s => selectedServices.includes(s.id)).reduce((acc, curr) => acc + curr.value, 0);
@@ -67,7 +103,7 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
     return Math.max(0, sValue + oValue - discount);
   }, [selectedServices, selectedOptionals, discount, servicesList, optionalsList]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const proposalData: Omit<Proposal, 'id' | 'number'> = {
       company_id: selectedCompanyId,
       client_id: selectedClientId,
@@ -86,10 +122,14 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
       notes
     };
 
-    if (id) {
-      db.proposals.update(id, proposalData);
-    } else {
-      db.proposals.create(proposalData);
+    try {
+      if (id) {
+        await api.proposals.update(id, proposalData);
+      } else {
+        await api.proposals.create(proposalData);
+      }
+    } catch (error) {
+      console.warn('Falha ao salvar proposta.', error);
     }
     onComplete();
   };
@@ -97,7 +137,7 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
   const handlePDFDownload = () => {
     const tempProposal: Proposal = {
       id: id || 'temp',
-      number: id ? (db.proposals.get(id)?.number || 'PRP-000') : 'PRP-PREVIEW',
+      number: id ? (proposalNumber || 'PRP-000') : 'PRP-PREVIEW',
       company_id: selectedCompanyId,
       client_id: selectedClientId,
       services_ids: selectedServices,
@@ -114,7 +154,7 @@ const ProposalWizard: React.FC<Props> = ({ id, onComplete, onCancel }) => {
       platform,
       notes
     };
-    generateProposalPDF(tempProposal);
+    void generateProposalPDF(tempProposal);
   };
 
   const steps = [

@@ -1,21 +1,29 @@
 
 import { jsPDF } from 'jspdf';
-import { Proposal, Client } from '../types';
-import { db } from '../mockDb';
+import { Proposal, Client, Company, Service, Term } from '../types';
+import { api } from '../api';
 
-export const generateProposalPDF = (proposal: Proposal) => {
+export const generateProposalPDF = async (proposal: Proposal) => {
   const doc = new jsPDF();
-  const company = db.companies.get(proposal.company_id);
-  const client = db.clients.get(proposal.client_id) as Client;
-  
-  // Resgate de dados garantindo integridade
-  const allServices = db.services.list();
-  const allTerms = db.terms.list();
-  const allOptionals = db.optionals.list();
+  let company: Company | null = null;
+  let client: Client | null = null;
+  let services: Service[] = [];
+  let terms: Term[] = [];
 
-  const services = allServices.filter(s => proposal.services_ids.includes(s.id));
-  const terms = allTerms.filter(t => proposal.terms_ids.includes(t.id));
-  const optionals = allOptionals.filter(o => proposal.optionals_ids.includes(o.id));
+  try {
+    const [companyData, clientData, allServices, allTerms] = await Promise.all([
+      api.companies.get(proposal.company_id),
+      api.clients.get(proposal.client_id),
+      api.services.list(),
+      api.terms.list(),
+    ]);
+    company = companyData;
+    client = clientData as Client;
+    services = allServices.filter(s => proposal.services_ids.includes(s.id));
+    terms = allTerms.filter(t => proposal.terms_ids.includes(t.id));
+  } catch (error) {
+    console.warn('Falha ao obter dados da proposta para PDF.', error);
+  }
 
   const margin = 20;
   let y = margin;
