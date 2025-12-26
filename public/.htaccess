@@ -1,8 +1,21 @@
 <IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
-  RewriteRule ^index\.html$ - [L]
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . /index.html [L]
+RewriteEngine On
+
+# =========================
+# PROXY PARA NODE.JS (API)
+# =========================
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteRule ^api/(.*)$ http://127.0.0.1:3000/api/$1 [P,L]
+
+RewriteCond %{REQUEST_URI} ^/auth/ [NC]
+RewriteRule ^auth/(.*)$ http://127.0.0.1:3000/auth/$1 [P,L]
+
+ProxyPreserveHost On
+
+# =========================
+# SPA FALLBACK (VITE / REACT)
+# =========================
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
 </IfModule>
