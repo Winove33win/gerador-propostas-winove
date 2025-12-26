@@ -16,18 +16,32 @@ const API_BASE = '/api';
 
 const isBrowser = typeof window !== 'undefined';
 
+const syncFailureMessage = 'Não foi possível sincronizar com o servidor. As alterações locais foram revertidas.';
+
 const safeFetch = async (url: string, options?: RequestInit) => {
-  if (!isBrowser) return;
+  if (!isBrowser) return { ok: true };
   try {
-    await fetch(url, {
+    const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
         ...(options?.headers || {})
       },
       ...options
     });
+    if (!response.ok) {
+      console.error(`Falha ao sincronizar com a API (${response.status}) em ${url}`);
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(syncFailureMessage);
+      }
+      return { ok: false, status: response.status };
+    }
+    return { ok: true, status: response.status };
   } catch (error) {
-    console.warn('Falha ao sincronizar com a API:', error);
+    console.error(`Erro ao sincronizar com a API em ${url}`, error);
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert(syncFailureMessage);
+    }
+    return { ok: false };
   }
 };
 
@@ -107,10 +121,15 @@ export const db = {
     create: (data: Omit<User, 'id'>) => {
       const items = get<User>(STORAGE_KEYS.USERS);
       const newItem = { ...data, id: crypto.randomUUID() };
-      save(STORAGE_KEYS.USERS, [...items, newItem]);
+      const updated = [...items, newItem];
+      save(STORAGE_KEYS.USERS, updated);
       void safeFetch('/auth/register', {
         method: 'POST',
         body: JSON.stringify(data)
+      }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.USERS, items);
+        }
       });
       return newItem;
     },
@@ -147,10 +166,15 @@ export const db = {
     create: (data: Omit<Client, 'id'>) => {
       const items = get<Client>(STORAGE_KEYS.CLIENTS);
       const newItem = { ...data, id: crypto.randomUUID() };
-      save(STORAGE_KEYS.CLIENTS, [...items, newItem]);
+      const updated = [...items, newItem];
+      save(STORAGE_KEYS.CLIENTS, updated);
       void safeFetch(`${API_BASE}/clients`, {
         method: 'POST',
         body: JSON.stringify(newItem)
+      }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.CLIENTS, items);
+        }
       });
       return newItem;
     },
@@ -161,11 +185,21 @@ export const db = {
       void safeFetch(`${API_BASE}/clients/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ ...updated.find(i => i.id === id), ...data })
+      }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.CLIENTS, items);
+        }
       });
     },
     delete: (id: string) => {
-      save(STORAGE_KEYS.CLIENTS, get<Client>(STORAGE_KEYS.CLIENTS).filter(i => i.id !== id));
-      void safeFetch(`${API_BASE}/clients/${id}`, { method: 'DELETE' });
+      const items = get<Client>(STORAGE_KEYS.CLIENTS);
+      const updated = items.filter(i => i.id !== id);
+      save(STORAGE_KEYS.CLIENTS, updated);
+      void safeFetch(`${API_BASE}/clients/${id}`, { method: 'DELETE' }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.CLIENTS, items);
+        }
+      });
     }
   },
   services: {
@@ -229,10 +263,15 @@ export const db = {
         id: crypto.randomUUID(),
         number: `PRP-${new Date().getFullYear()}-${items.length + 1}`
       };
-      save(STORAGE_KEYS.PROPOSALS, [...items, newItem]);
+      const updated = [...items, newItem];
+      save(STORAGE_KEYS.PROPOSALS, updated);
       void safeFetch(`${API_BASE}/proposals`, {
         method: 'POST',
         body: JSON.stringify(newItem)
+      }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.PROPOSALS, items);
+        }
       });
       return newItem;
     },
@@ -245,12 +284,22 @@ export const db = {
         void safeFetch(`${API_BASE}/proposals/${id}`, {
           method: 'PUT',
           body: JSON.stringify(payload)
+        }).then(result => {
+          if (!result.ok) {
+            save(STORAGE_KEYS.PROPOSALS, items);
+          }
         });
       }
     },
     delete: (id: string) => {
-      save(STORAGE_KEYS.PROPOSALS, get<Proposal>(STORAGE_KEYS.PROPOSALS).filter(i => i.id !== id));
-      void safeFetch(`${API_BASE}/proposals/${id}`, { method: 'DELETE' });
+      const items = get<Proposal>(STORAGE_KEYS.PROPOSALS);
+      const updated = items.filter(i => i.id !== id);
+      save(STORAGE_KEYS.PROPOSALS, updated);
+      void safeFetch(`${API_BASE}/proposals/${id}`, { method: 'DELETE' }).then(result => {
+        if (!result.ok) {
+          save(STORAGE_KEYS.PROPOSALS, items);
+        }
+      });
     }
   }
 };
