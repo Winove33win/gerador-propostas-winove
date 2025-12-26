@@ -1,10 +1,10 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,19 +16,11 @@ const distDir = path.join(__dirname, 'dist');
 /* =========================
    ENV / DB CONFIG
 ========================= */
-const DB_DATABASE = process.env.DB_DATABASE || process.env.DB_NAME || 'propostas-winove';
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = Number(process.env.DB_PORT || 3306);
-const DB_USER = process.env.DB_USERNAME || process.env.DB_USER;
-const DB_PASS = process.env.DB_PASSWORD ?? process.env.DB_PASS;
-
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 
-const missingEnv = [];
-if (!DB_USER) missingEnv.push('DB_USERNAME/DB_USER');
-if (DB_PASS === undefined) missingEnv.push('DB_PASSWORD/DB_PASS');
+const missingEnv = [...missingDbEnv];
 if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
 
 if (missingEnv.length > 0) {
@@ -37,20 +29,6 @@ if (missingEnv.length > 0) {
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
-
-const dbPool =
-  DB_USER && DB_PASS !== undefined
-    ? mysql.createPool({
-        host: DB_HOST,
-        port: DB_PORT,
-        user: DB_USER,
-        password: DB_PASS,
-        database: DB_DATABASE,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-      })
-    : null;
 
 /* =========================
    HELPERS (resposta padrão)
@@ -903,5 +881,9 @@ app.get('*', (_req, res) => {
 
 app.listen(port, host, () => {
   console.log(`[OK] Server listening on http://${host}:${port}`);
-  console.log(`[OK] DB=${DB_DATABASE} HOST=${DB_HOST}:${DB_PORT} USER=${DB_USER}`);
+  if (isDbConfigured) {
+    console.log(
+      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${process.env.DB_USERNAME}`
+    );
+  }
 });
