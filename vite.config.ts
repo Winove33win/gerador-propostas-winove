@@ -9,7 +9,7 @@ export default defineConfig(() => ({
   },
   plugins: [react()],
   build: {
-    outDir: 'Backend/dist',
+    outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       external: [

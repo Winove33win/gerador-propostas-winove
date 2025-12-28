@@ -24,6 +24,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
 
 - **Application Root:** raiz do repositório (ex.: `/agencia.winove.com.br/`)
 - **Startup file:** `Backend/server.js`
+- **Document Root:** `<raiz>/dist`
 
 Depois, execute no **Application Root**:
 
