@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
+import { envSummary } from './env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,11 +24,24 @@ const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
 const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
 
-const missingEnv = [...missingDbEnv];
-if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
+if (envSummary.missingRequiredEnv.length > 0) {
+  console.warn(
+    `[WARN] Variáveis obrigatórias ausentes: ${envSummary.missingRequiredEnv.join(', ')}.`
+  );
+}
 
-if (missingEnv.length > 0) {
-  console.warn(`[WARN] Variáveis de ambiente ausentes: ${missingEnv.join(', ')}.`);
+if (envSummary.missingDbEnv.length > 0) {
+  console.warn(
+    `[WARN] Banco de dados não configurado. Variáveis ausentes: ${envSummary.missingDbEnv.join(
+      ', '
+    )}.`
+  );
+}
+
+if (envSummary.missingOptionalEnv.length > 0) {
+  console.info(
+    `[INFO] Variáveis opcionais não definidas: ${envSummary.missingOptionalEnv.join(', ')}.`
+  );
 }
 
 const app = express();
@@ -1118,7 +1132,7 @@ app.listen(port, host, () => {
   console.log(`[OK] Server listening on http://${host}:${port}`);
   if (isDbConfigured) {
     console.log(
-      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${process.env.DB_USERNAME}`
+      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${envSummary.dbUser}`
     );
   }
 });
