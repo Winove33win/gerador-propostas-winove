@@ -9,6 +9,8 @@ import net from 'net';
 import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 import { commercialPanelConfig, envSummary } from './env.js';
 
+console.log('[BOOT] Inicializando servidor (ESM).');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
