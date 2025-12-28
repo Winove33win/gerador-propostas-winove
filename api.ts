@@ -103,6 +103,7 @@ export const api = {
     register: async (payload: Omit<User, 'id' | 'role'> & { role?: User['role'] }): Promise<User> => {
       const response = await request<{ data: { user: User; token: string } }>('/auth/register', {
         method: 'POST',
+        headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
         body: {
           name: payload.name,
           email: payload.email,

@@ -126,6 +126,7 @@ export const db = {
       save(STORAGE_KEYS.USERS, updated);
       void safeFetch('/auth/register', {
         method: 'POST',
+        headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
         body: JSON.stringify({
           ...data,
           ...(REGISTER_INVITE_TOKEN ? { invite_token: REGISTER_INVITE_TOKEN } : {})
