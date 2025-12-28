@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import net from 'net';
@@ -17,15 +18,25 @@ if (process.env.DB_DATABASE && !process.env.DB_NAME) {
   process.env.DB_NAME = process.env.DB_DATABASE;
 }
 
-const SERVER_VERSION = '2025-12-28';
-console.log(`[BOOT] Server v${SERVER_VERSION} running`);
+const SERVER_VERSION = '2025-12-28-plesk-fix';
+console.log(`[BOOT] Server v${SERVER_VERSION} booting`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3333);
 const host = '0.0.0.0';
-const distDir = path.join(__dirname, 'dist');
+const resolveDistDir = () => {
+  if (process.env.DIST_DIR) {
+    return path.resolve(process.env.DIST_DIR);
+  }
+  const candidateInsideBackend = path.join(__dirname, 'dist');
+  if (fs.existsSync(candidateInsideBackend)) {
+    return candidateInsideBackend;
+  }
+  return path.join(__dirname, '..', 'dist');
+};
+const distDir = resolveDistDir();
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DB_HOST = process.env.DB_HOST;
 
@@ -57,6 +68,8 @@ if (envSummary.missingOptionalEnv.length > 0) {
 console.log('[BOOT] Environment summary', {
   node_env: NODE_ENV,
   port,
+  distDir,
+  cwd: process.cwd(),
   db: {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT,
@@ -67,6 +80,11 @@ console.log('[BOOT] Environment summary', {
     configured: Boolean(JWT_SECRET),
     expires_in: JWT_EXPIRES_IN,
   },
+});
+
+console.log('[BOOT] Config checks', {
+  db_configured: isDbConfigured,
+  jwt_configured: Boolean(JWT_SECRET),
 });
 
 const isPrivateIpv4 = (ip) => {
@@ -624,6 +642,14 @@ const registerHandler = async (req, res) => {
 ========================= */
 const healthHandler = (_req, res) => res.status(200).json({ ok: true });
 
+const healthVersionHandler = (_req, res) =>
+  res.status(200).json({
+    ok: true,
+    version: SERVER_VERSION,
+    distDir,
+    cwd: process.cwd(),
+  });
+
 const healthDbHandler = async (_req, res) => {
   if (!dbPool) {
     return fail(res, 503, 'Banco de dados não configurado.');
@@ -652,10 +678,12 @@ const healthDbHandler = async (_req, res) => {
 // Health (público)
 app.get('/health', healthHandler);
 app.get('/health/db', healthDbHandler);
+app.get('/health/version', healthVersionHandler);
 
 // ✅ aliases comuns (se o front chamar com /api)
 app.get('/api/health', healthHandler);
 app.get('/api/health/db', healthDbHandler);
+app.get('/api/health/version', healthVersionHandler);
 
 // Auth (público)
 app.post('/auth/login', authRateLimitMiddleware, loginHandler);
@@ -666,6 +694,20 @@ app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
 // Register (público)
 app.post('/auth/register', registerHandler);
 app.post('/api/auth/register', registerHandler);
+
+const publicRoutes = [
+  'GET /health',
+  'GET /health/db',
+  'GET /health/version',
+  'GET /api/health',
+  'GET /api/health/db',
+  'GET /api/health/version',
+  'POST /auth/login',
+  'POST /api/auth/login',
+  'POST /auth/register',
+  'POST /api/auth/register',
+];
+console.log('[BOOT] Rotas públicas registradas:', publicRoutes);
 
 /* =========================
    PROTECTED API
