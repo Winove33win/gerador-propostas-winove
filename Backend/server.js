@@ -18,7 +18,9 @@ if (process.env.DB_DATABASE && !process.env.DB_NAME) {
 }
 
 const SERVER_VERSION = '2025-12-28-plesk-fix';
+const BUILD_ID = `serverjs-${new Date().toISOString()}`;
 console.log(`[BOOT] Server v${SERVER_VERSION} booting`);
+console.log(`[BOOT] BUILD_ID=${BUILD_ID} CWD=${process.cwd()} FILE=${import.meta.url}`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,6 +115,10 @@ if (NODE_ENV === 'production' && DB_HOST && net.isIP(DB_HOST) && !isPrivateIp(DB
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use((req, _res, next) => {
+  console.log('[REQ]', req.method, req.originalUrl);
+  next();
+});
 
 /* =========================
    HELPERS (resposta padrão)
@@ -461,6 +467,7 @@ const writeProposalRelations = async (proposalId, table, column, ids = []) => {
 ========================= */
 const loginHandler = async (req, res) => {
   try {
+    console.log('[LOGIN_HIT]', { url: req.originalUrl, hasBody: !!req.body });
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
     const email = body?.email?.trim()?.toLowerCase();
@@ -639,6 +646,14 @@ const healthVersionHandler = (_req, res) =>
     cwd: process.cwd(),
   });
 
+const versionHandler = (_req, res) =>
+  res.status(200).json({
+    ok: true,
+    build_id: BUILD_ID,
+    cwd: process.cwd(),
+    file: import.meta.url,
+  });
+
 const healthDbHandler = async (_req, res) => {
   if (!dbPool) {
     return fail(res, 503, 'Banco de dados não configurado.');
@@ -666,21 +681,35 @@ const healthDbHandler = async (_req, res) => {
 
 // Health (público)
 app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
+app.get('/api/health/db', healthDbHandler);
 app.get('/health/version', healthVersionHandler);
+
+// Version (público)
+app.get('/version', versionHandler);
+app.get('/api/version', versionHandler);
 
 // Auth (público)
 app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
+app.post('/auth/login', authRateLimitMiddleware, loginHandler);
 
 // Register (público)
 app.post('/api/auth/register', registerHandler);
+app.post('/auth/register', registerHandler);
 
 const publicRoutes = [
   'GET /health',
+  'GET /api/health',
   'GET /health/db',
+  'GET /api/health/db',
   'GET /health/version',
+  'GET /version',
+  'GET /api/version',
   'POST /api/auth/login',
+  'POST /auth/login',
   'POST /api/auth/register',
+  'POST /auth/register',
 ];
 console.log('[BOOT] Rotas públicas registradas:', publicRoutes);
 
