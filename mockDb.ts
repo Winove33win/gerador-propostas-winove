@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
 };
 
 const API_BASE = '/api';
+const REGISTER_INVITE_TOKEN = import.meta.env?.VITE_REGISTER_INVITE_TOKEN ?? '';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -125,7 +126,10 @@ export const db = {
       save(STORAGE_KEYS.USERS, updated);
       void safeFetch('/auth/register', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          ...data,
+          ...(REGISTER_INVITE_TOKEN ? { invite_token: REGISTER_INVITE_TOKEN } : {})
+        })
       }).then(result => {
         if (!result.ok) {
           save(STORAGE_KEYS.USERS, items);
