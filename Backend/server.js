@@ -7,7 +7,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import net from 'net';
 import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
-import { envSummary } from './env.js';
+import { commercialPanelConfig, envSummary } from './env.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -211,6 +211,29 @@ const requireRole = (...roles) => (req, res, next) => {
 
   if (!currentRole || !roles.includes(currentRole)) {
     return fail(res, 403, 'Acesso negado.');
+  }
+
+  return next();
+};
+
+const requireCommercialPanelAuth = (req, res, next) => {
+  const { username, password } = commercialPanelConfig;
+  if (!username || !password) {
+    return fail(res, 503, 'Painel comercial não configurado.');
+  }
+
+  const header = req.headers.authorization || '';
+  const [scheme, encoded] = header.split(' ');
+  if (!encoded || scheme?.toLowerCase() !== 'basic') {
+    res.set('WWW-Authenticate', 'Basic realm="Painel Comercial"');
+    return fail(res, 401, 'Credenciais ausentes.');
+  }
+
+  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+  const [providedUser, providedPassword] = decoded.split(':');
+  if (providedUser !== username || providedPassword !== password) {
+    res.set('WWW-Authenticate', 'Basic realm="Painel Comercial"');
+    return fail(res, 401, 'Credenciais inválidas.');
   }
 
   return next();
@@ -1155,6 +1178,7 @@ app.delete('/api/proposals/:id', async (req, res) => {
 ========================= */
 app.use(['/api', '/auth'], (_req, res) => fail(res, 404, 'Rota não encontrada.'));
 
+app.use('/comercial-propostas', requireCommercialPanelAuth);
 app.use(express.static(distDir));
 app.get('*', (_req, res) => {
   if (_req.path.startsWith('/api') || _req.path.startsWith('/auth')) {
