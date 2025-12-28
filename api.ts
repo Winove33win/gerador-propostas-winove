@@ -8,7 +8,7 @@ import {
   User,
 } from './types';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env?.VITE_API_BASE || '/api';
 const SESSION_KEY = 'prop_session';
 type Session = { user: User; token: string };
 const REGISTER_INVITE_TOKEN = import.meta.env?.VITE_REGISTER_INVITE_TOKEN ?? '';
