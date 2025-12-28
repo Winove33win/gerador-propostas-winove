@@ -619,9 +619,6 @@ const registerHandler = async (req, res) => {
   }
 };
 
-app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
-app.post('/api/auth/register', registerHandler);
-
 /* =========================
    HEALTH
 ========================= */
@@ -648,8 +645,32 @@ const healthDbHandler = async (_req, res) => {
   }
 };
 
+/* =========================
+   PUBLIC ROUTES (ANTES DO /api guard)
+========================= */
+
+// Health (público)
 app.get('/health', healthHandler);
 app.get('/health/db', healthDbHandler);
+
+// ✅ aliases comuns (se o front chamar com /api)
+app.get('/api/health', healthHandler);
+app.get('/api/health/db', healthDbHandler);
+
+// Auth (público)
+app.post('/auth/login', authRateLimitMiddleware, loginHandler);
+
+// ✅ front está chamando /api/auth/login
+app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
+
+// Register (público)
+app.post('/auth/register', registerHandler);
+app.post('/api/auth/register', registerHandler);
+
+/* =========================
+   PROTECTED API
+========================= */
+app.use('/api', requireAuth);
 
 /* =========================
    DEBUG (token)
@@ -704,8 +725,6 @@ app.get('/debug/user', async (req, res) => {
     return fail(res, 500, 'Erro ao consultar usuário.');
   }
 });
-
-app.use('/api', requireAuth);
 
 app.get('/api/tables', requireRole('admin'), async (_req, res) => {
   if (!ENABLE_DB_INTROSPECTION) {
