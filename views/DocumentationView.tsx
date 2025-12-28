@@ -249,7 +249,7 @@ CREATE TABLE proposal_terms (
             <div className="divide-y divide-slate-100 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               {[
                 { m: 'POST', p: '/auth/login', d: 'Autenticação tripla e geração de JWT' },
-                { m: 'POST', p: '/auth/register', d: 'Criação de novos colaboradores (Employee)' },
+                { m: 'POST', p: '/api/auth/register', d: 'Criação de novos colaboradores (Employee)' },
                 { m: 'GET', p: '/clients', d: 'Listagem de clientes para o Wizard' },
                 { m: 'POST', p: '/proposals', d: 'Persistência de nova proposta comercial' },
                 { m: 'GET', p: '/proposals/:id/pdf', d: 'Engine de renderização jsPDF Winove' },

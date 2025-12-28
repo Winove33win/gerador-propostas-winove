@@ -27,7 +27,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
 
 - **Cadastro público em produção:** defina `ALLOW_PUBLIC_REGISTER=true` no backend.
 - **Cadastro protegido por invite:** defina `REGISTER_INVITE_TOKEN` no backend e envie o token no cadastro:
-  - **Payload:** campo `invite_token` dentro do JSON do `POST /auth/register`
+  - **Payload:** campo `invite_token` dentro do JSON do `POST /api/auth/register`
   - **Header:** `x-invite-token: <TOKEN>`
 - **Front-end:** configure `VITE_REGISTER_INVITE_TOKEN` para que o token seja enviado automaticamente (payload + header).
 
