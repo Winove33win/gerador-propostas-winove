@@ -61,6 +61,14 @@ export const OPTIONAL_ENV = [
     key: 'AUTH_RATE_LIMIT_LOCKOUT_MAX_MS',
     description: 'Tempo máximo de lockout (ms)',
   },
+  {
+    key: 'COMMERCIAL_PANEL_USERNAME',
+    description: 'Usuário do painel comercial (/comercial-propostas)',
+  },
+  {
+    key: 'COMMERCIAL_PANEL_PASSWORD',
+    description: 'Senha do painel comercial (/comercial-propostas)',
+  },
   { key: 'NODE_ENV', description: 'Ambiente de execução (production, etc.)' },
   { key: 'DB_CONN_LIMIT', description: 'Limite de conexões do pool' },
 ];
@@ -82,4 +90,9 @@ export const envSummary = {
   missingDbEnv,
   missingOptionalEnv,
   dbUser,
+};
+
+export const commercialPanelConfig = {
+  username: process.env.COMMERCIAL_PANEL_USERNAME,
+  password: process.env.COMMERCIAL_PANEL_PASSWORD,
 };
