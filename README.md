@@ -20,6 +20,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
    - `REGISTER_INVITE_TOKEN` para exigir token no cadastro (produção)
    - `ALLOW_PUBLIC_REGISTER=true` para liberar cadastro público em produção (ignora o invite)
    - `VITE_REGISTER_INVITE_TOKEN` no front-end para enviar automaticamente o token no cadastro
+   - `VITE_API_BASE` no front-end para apontar o backend (ex.: `https://dominio.com/api`). Fallback: `/api`
 3. Run the app:
    `npm run dev`
 
@@ -37,6 +38,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
 - **Application Root:** raiz do repositório (ex.: `/agencia.winove.com.br/`)
 - **Startup file:** `Backend/server.js`
 - **Document Root:** `<raiz>/dist`
+- **Reverse Proxy / API:** garanta que `/api` (e `/api/*`) seja encaminhado para o Node (backend), não para o `dist/`. Se houver regras de proxy no Plesk/Nginx/Apache, valide que a rota `/api/*` aponte para o processo Node da aplicação.
 
 Depois, execute no **Application Root**:
 
