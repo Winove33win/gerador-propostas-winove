@@ -1,3 +1,11 @@
+if (process.env.DB_USERNAME && !process.env.DB_USER) {
+  process.env.DB_USER = process.env.DB_USERNAME;
+}
+
+if (process.env.DB_DATABASE && !process.env.DB_NAME) {
+  process.env.DB_NAME = process.env.DB_DATABASE;
+}
+
 const resolveEnvValue = (entry) => {
   if (process.env[entry.key]) return process.env[entry.key];
   if (entry.aliases) {
@@ -72,6 +80,10 @@ export const OPTIONAL_ENV = [
   {
     key: 'COMMERCIAL_PANEL_PASSWORD',
     description: 'Senha do painel comercial (/comercial-propostas)',
+  },
+  {
+    key: 'DEBUG_TOKEN',
+    description: 'Token de acesso para endpoints /debug',
   },
   { key: 'NODE_ENV', description: 'Ambiente de execução (production, etc.)' },
   { key: 'DB_CONN_LIMIT', description: 'Limite de conexões do pool' },

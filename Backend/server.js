@@ -9,7 +9,16 @@ import net from 'net';
 import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 import { commercialPanelConfig, envSummary } from './env.js';
 
-console.log('[BOOT] Inicializando servidor (ESM).');
+if (process.env.DB_USERNAME && !process.env.DB_USER) {
+  process.env.DB_USER = process.env.DB_USERNAME;
+}
+
+if (process.env.DB_DATABASE && !process.env.DB_NAME) {
+  process.env.DB_NAME = process.env.DB_DATABASE;
+}
+
+const SERVER_VERSION = '2025-12-28';
+console.log(`[BOOT] Server v${SERVER_VERSION} running`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,26 +38,36 @@ const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
 const ALLOW_PUBLIC_REGISTER = process.env.ALLOW_PUBLIC_REGISTER === 'true';
 const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
+const DEBUG_TOKEN = process.env.DEBUG_TOKEN;
 
-if (envSummary.missingRequiredEnv.length > 0) {
-  console.warn(
-    `[WARN] Variáveis obrigatórias ausentes: ${envSummary.missingRequiredEnv.join(', ')}.`
-  );
-}
-
-if (envSummary.missingDbEnv.length > 0) {
-  console.warn(
-    `[WARN] Banco de dados não configurado. Variáveis ausentes: ${envSummary.missingDbEnv.join(
-      ', '
-    )}.`
-  );
+if (envSummary.missingRequiredEnv.length > 0 || envSummary.missingDbEnv.length > 0) {
+  console.error('[FATAL] Variáveis críticas ausentes.', {
+    missingRequired: envSummary.missingRequiredEnv,
+    missingDb: envSummary.missingDbEnv,
+  });
+  process.exit(1);
 }
 
 if (envSummary.missingOptionalEnv.length > 0) {
-  console.info(
-    `[INFO] Variáveis opcionais não definidas: ${envSummary.missingOptionalEnv.join(', ')}.`
-  );
+  console.info('[INFO] Variáveis opcionais não definidas.', {
+    missingOptional: envSummary.missingOptionalEnv,
+  });
 }
+
+console.log('[BOOT] Environment summary', {
+  node_env: NODE_ENV,
+  port,
+  db: {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    database: process.env.DB_DATABASE || process.env.DB_NAME,
+    user: envSummary.dbUser,
+  },
+  jwt: {
+    configured: Boolean(JWT_SECRET),
+    expires_in: JWT_EXPIRES_IN,
+  },
+});
 
 const isPrivateIpv4 = (ip) => {
   const parts = ip.split('.').map((part) => Number(part));
@@ -239,6 +258,17 @@ const requireCommercialPanelAuth = (req, res, next) => {
     return fail(res, 401, 'Credenciais inválidas.');
   }
 
+  return next();
+};
+
+const requireDebugToken = (req, res, next) => {
+  if (!DEBUG_TOKEN) {
+    return fail(res, 503, 'DEBUG_TOKEN não configurado.');
+  }
+  const provided = req.headers['x-debug-token'];
+  if (!provided || provided !== DEBUG_TOKEN) {
+    return fail(res, 403, 'Token de depuração inválido.');
+  }
   return next();
 };
 
@@ -479,6 +509,7 @@ const loginHandler = async (req, res) => {
       return fail(res, 403, 'Senha precisa ser redefinida.');
     }
 
+    console.log('[LOGIN] email JSON:', JSON.stringify(email));
     console.log('[LOGIN] password typeof:', typeof passwordRaw);
     console.log('[LOGIN] password raw JSON:', JSON.stringify(passwordRaw));
     console.log(
@@ -589,23 +620,28 @@ const registerHandler = async (req, res) => {
 };
 
 app.post('/auth/login', authRateLimitMiddleware, loginHandler);
-app.post('/api/auth/register', registerHandler);
 app.post('/auth/register', registerHandler);
-
-app.use('/api', requireAuth);
 
 /* =========================
    HEALTH
 ========================= */
-const healthHandler = (_req, res) => ok(res, { ok: true });
+const healthHandler = (_req, res) => res.status(200).json({ ok: true });
 
 const healthDbHandler = async (_req, res) => {
   if (!dbPool) {
     return fail(res, 503, 'Banco de dados não configurado.');
   }
   try {
-    const [rows] = await dbPool.query('SELECT DATABASE() AS db');
-    return ok(res, { ok: true, db: rows?.[0]?.db });
+    const [rows] = await dbPool.query(
+      'SELECT DATABASE() AS db, @@hostname AS host, @@port AS port'
+    );
+    const dbInfo = rows?.[0] || {};
+    return res.status(200).json({
+      ok: true,
+      db: dbInfo.db || process.env.DB_DATABASE || process.env.DB_NAME,
+      host: dbInfo.host || process.env.DB_HOST,
+      port: dbInfo.port || process.env.DB_PORT,
+    });
   } catch (error) {
     console.error('HEALTH_DB_ERROR:', error);
     return fail(res, 500, 'Falha no health check do banco.', error?.message);
@@ -613,23 +649,63 @@ const healthDbHandler = async (_req, res) => {
 };
 
 app.get('/health', healthHandler);
-app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
-app.get('/api/health/db', healthDbHandler);
-app.get('/api/auth/health', (_req, res) => ok(res, { ok: true }));
-app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
-app.get('/debug/db', async (req, res) => {
-  const debugToken = process.env.DEBUG_DB_TOKEN;
-  const suppliedToken = req.headers['x-debug-token'] || req.query?.token;
-  if (debugToken && suppliedToken !== debugToken) {
-    return fail(res, 403, 'Acesso negado.');
-  }
 
-  const [rows] = await dbPool.query(
-    'SELECT DATABASE() AS db, @@hostname AS host, @@port AS port'
-  );
-  return res.json(rows[0]);
+/* =========================
+   DEBUG (token)
+========================= */
+app.use('/debug', requireDebugToken);
+
+app.get('/debug/db', async (_req, res) => {
+  if (!dbPool) {
+    return fail(res, 503, 'Banco de dados não configurado.');
+  }
+  try {
+    const [rows] = await dbPool.query(
+      'SELECT DATABASE() AS db, @@hostname AS host, @@port AS port'
+    );
+    const dbInfo = rows?.[0] || {};
+    return ok(res, {
+      ok: true,
+      db: dbInfo.db || process.env.DB_DATABASE || process.env.DB_NAME,
+      host: dbInfo.host || process.env.DB_HOST,
+      port: dbInfo.port || process.env.DB_PORT,
+    });
+  } catch (error) {
+    console.error('DEBUG_DB_ERROR:', error);
+    return fail(res, 500, 'Falha ao consultar banco.', error?.message);
+  }
 });
+
+app.get('/debug/user', async (req, res) => {
+  try {
+    const email = req.query?.email?.toString().trim().toLowerCase();
+    if (!email) {
+      return fail(res, 400, 'Informe o e-mail.');
+    }
+
+    const rows = await safeQuery('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+    const user = rows[0];
+    if (!user) {
+      return fail(res, 404, 'Usuário não encontrado.');
+    }
+
+    const passwordValue = user.password ? String(user.password) : null;
+    const passwordPreview = passwordValue
+      ? `${passwordValue.slice(0, 6)}...${passwordValue.slice(-4)}`
+      : null;
+
+    return ok(res, {
+      ...sanitizeUser(user),
+      password_preview: passwordPreview,
+    });
+  } catch (error) {
+    console.error('DEBUG_USER_ERROR:', error);
+    return fail(res, 500, 'Erro ao consultar usuário.');
+  }
+});
+
+app.use('/api', requireAuth);
 
 app.get('/api/tables', requireRole('admin'), async (_req, res) => {
   if (!ENABLE_DB_INTROSPECTION) {
@@ -1208,15 +1284,22 @@ app.delete('/api/proposals/:id', async (req, res) => {
 /* =========================
    STATIC + SPA FALLBACK
 ========================= */
-app.use(['/api', '/auth'], (_req, res) => fail(res, 404, 'Rota não encontrada.'));
+app.use(['/api', '/auth', '/health', '/debug'], (_req, res) =>
+  fail(res, 404, 'Rota não encontrada.')
+);
 
 app.use('/comercial-propostas', requireCommercialPanelAuth);
 app.use(express.static(distDir));
-app.get('*', (_req, res) => {
-  if (_req.path.startsWith('/api') || _req.path.startsWith('/auth')) {
+app.get('*', (req, res) => {
+  if (
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/health') ||
+    req.path.startsWith('/debug')
+  ) {
     return res.status(404).json({ error: 'Rota não encontrada.', data: null });
   }
-  if (_req.method !== 'GET' && _req.method !== 'HEAD') {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
     return res.status(405).json({ error: 'Método não permitido.', data: null });
   }
   return res.sendFile(path.join(distDir, 'index.html'));
