@@ -139,7 +139,7 @@ const DocumentationView: React.FC = () => {
 CREATE TABLE users (
   id CHAR(36) PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
-  email VARCHAR(100) UNIQUE NOT NULL,
+  login VARCHAR(100) UNIQUE NOT NULL,
   cnpj_access VARCHAR(18) NOT NULL, -- Chave de segurança tripla
   password VARCHAR(255) NOT NULL,
   role ENUM('admin', 'employee') DEFAULT 'employee',
@@ -154,7 +154,6 @@ CREATE TABLE clients (
   address TEXT,
   person_name VARCHAR(100),
   job_title VARCHAR(100),
-  email VARCHAR(100),
   phone VARCHAR(20)
 );
 
@@ -209,11 +208,11 @@ CREATE TABLE proposal_terms (
             <div className="space-y-4">
               <h4 className="text-2xl font-black">Algoritmo de Tripla Validação</h4>
               <p className="text-blue-100 leading-relaxed">
-                Para mitigar acessos indevidos em ambiente de produção, o sistema não utiliza apenas e-mail e senha. 
+                Para mitigar acessos indevidos em ambiente de produção, o sistema não utiliza apenas identificador e senha. 
                 Cada requisição de login deve conter o <b>CNPJ da Unidade de Negócio</b> vinculada ao colaborador.
               </p>
               <div className="flex flex-wrap gap-4 pt-2">
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: E-mail Profissional</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: Identificador Profissional</span>
                 <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: CNPJ da Empresa</span>
                 <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 3: Senha Criptografada</span>
               </div>
@@ -255,7 +254,7 @@ CREATE TABLE proposal_terms (
                <pre className="text-blue-300 font-mono text-[11px] leading-relaxed">
 {`{
   "auth": {
-    "email": "contato@winove.com.br",
+    "login": "usuario.profissional",
     "cnpj_access": "29.900.423/0001-40",
     "password": "**************"
   },
