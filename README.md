@@ -22,5 +22,12 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
 
 ## Startup (Plesk)
 
-O arquivo de startup esperado no Plesk é o `backend-start.js`, que apenas importa o
-`Backend/server.js` (ESM) para subir o servidor.
+- **Application Root:** raiz do repositório (ex.: `/agencia.winove.com.br/`)
+- **Startup file:** `Backend/server.js`
+
+Depois, execute no **Application Root**:
+
+1. `npm install`
+2. `npm run build`
+
+Isso garante que `node_modules/` e `dist/` sejam gerados corretamente.
