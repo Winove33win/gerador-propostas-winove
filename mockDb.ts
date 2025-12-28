@@ -124,7 +124,7 @@ export const db = {
       const newItem = { ...data, id: crypto.randomUUID() };
       const updated = [...items, newItem];
       save(STORAGE_KEYS.USERS, updated);
-      void safeFetch('/auth/register', {
+      void safeFetch('/api/auth/register', {
         method: 'POST',
         headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
         body: JSON.stringify({

@@ -101,7 +101,9 @@ export const api = {
       return response.data.user;
     },
     register: async (payload: Omit<User, 'id' | 'role'> & { role?: User['role'] }): Promise<User> => {
-      const response = await request<{ data: { user: User; token: string } }>('/auth/register', {
+      const response = await request<{ data: { user: User; token: string } }>(
+        '/api/auth/register',
+        {
         method: 'POST',
         headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
         body: {
@@ -111,7 +113,8 @@ export const api = {
           password: payload.password,
           ...(REGISTER_INVITE_TOKEN ? { invite_token: REGISTER_INVITE_TOKEN } : {}),
         },
-      });
+        }
+      );
       storeSession({ user: response.data.user, token: response.data.token });
       return response.data.user;
     },

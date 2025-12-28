@@ -574,6 +574,7 @@ const registerHandler = async (req, res) => {
 };
 
 app.post('/auth/login', authRateLimitMiddleware, loginHandler);
+app.post('/api/auth/register', registerHandler);
 app.post('/auth/register', registerHandler);
 
 app.use('/api', requireAuth);
@@ -600,6 +601,7 @@ app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
+app.get('/api/auth/health', (_req, res) => ok(res, { ok: true }));
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
 
 app.get('/api/tables', requireRole('admin'), async (_req, res) => {
