@@ -74,6 +74,22 @@ const serializeJsonArray = (value) => {
 const isBcryptHash = (v = '') =>
   v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$');
 
+const isInactiveUser = (user) => {
+  if (!user) return true;
+  const status = user.status;
+  if (status !== undefined && status !== null) {
+    const normalizedStatus = String(status).trim().toLowerCase();
+    const activeStatuses = new Set(['ativo', 'active', 'enabled', '1', 'true']);
+    if (!activeStatuses.has(normalizedStatus)) return true;
+  }
+  const ativo = user.ativo;
+  if (ativo !== undefined && ativo !== null) {
+    const normalizedAtivo = String(ativo).trim().toLowerCase();
+    if (normalizedAtivo === '0' || normalizedAtivo === 'false') return true;
+  }
+  return false;
+};
+
 const signToken = (user) => {
   if (!JWT_SECRET) {
     throw new Error('JWT_SECRET não definido no ambiente.');
@@ -84,13 +100,14 @@ const signToken = (user) => {
       email: user.email,
       role: user.role,
       cnpj_access: normalizeCnpj(user.cnpj_access || ''),
+      token_version: user.token_version ?? undefined,
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
 };
 
-const requireAuth = (req, res, next) => {
+const requireAuth = async (req, res, next) => {
   const header = req.headers.authorization || '';
   const [scheme, token] = header.split(' ');
 
@@ -103,7 +120,33 @@ const requireAuth = (req, res, next) => {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const rows = await safeQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [payload.sub]);
+    const user = rows[0];
+
+    if (!user) {
+      return fail(res, 401, 'Usuário não encontrado.');
+    }
+
+    if (isInactiveUser(user)) {
+      return fail(res, 403, 'Usuário inativo.');
+    }
+
+    if (user.token_version !== undefined && user.token_version !== null) {
+      if (payload.token_version === undefined || payload.token_version === null) {
+        return fail(res, 403, 'Token revogado.');
+      }
+      if (String(payload.token_version) !== String(user.token_version)) {
+        return fail(res, 403, 'Token revogado.');
+      }
+    }
+
+    req.user = {
+      ...payload,
+      role: user.role,
+      email: user.email,
+      cnpj_access: normalizeCnpj(user.cnpj_access || ''),
+    };
     return next();
   } catch (error) {
     return fail(res, 403, 'Token inválido ou expirado.');
@@ -322,7 +365,7 @@ const loginHandler = async (req, res) => {
 
     // busca usuário por email
     const rows = await safeQuery(
-      `SELECT id, name, email, cnpj_access, password, role
+      `SELECT *
        FROM users
        WHERE email = ?
        LIMIT 1`,
