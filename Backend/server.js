@@ -20,6 +20,7 @@ const distDir = path.join(__dirname, '..', 'dist');
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
+const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
 
 const missingEnv = [...missingDbEnv];
 if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
@@ -218,9 +219,18 @@ const loginHandler = async (req, res) => {
 
 const registerHandler = async (req, res) => {
   try {
-    console.log('➡️ REGISTER payload:', req.body);
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction && !REGISTER_INVITE_TOKEN) {
+      return fail(res, 403, 'Cadastro desativado.');
+    }
 
-    const payload = req.body?.auth || req.body;
+    const payload = req.body?.auth || req.body || {};
+    if (REGISTER_INVITE_TOKEN) {
+      const inviteToken = payload?.invite_token || req.headers['x-invite-token'];
+      if (!inviteToken || inviteToken !== REGISTER_INVITE_TOKEN) {
+        return fail(res, 403, 'Cadastro não autorizado.');
+      }
+    }
 
     const name = payload?.name?.trim();
     const email = payload?.email?.trim();
@@ -228,7 +238,6 @@ const registerHandler = async (req, res) => {
     const password = payload?.password;
 
     if (!name || !email || !cnpjAccess || !password) {
-      console.warn('❌ Dados ausentes');
       return fail(res, 400, 'Dados obrigatórios ausentes.');
     }
 
@@ -240,27 +249,17 @@ const registerHandler = async (req, res) => {
     );
 
     if (existing.length > 0) {
-      console.warn('⚠️ Email já cadastrado:', email);
       return fail(res, 409, 'E-mail já cadastrado.');
     }
 
     const id = crypto.randomUUID();
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    console.log('📝 Inserindo usuário:', {
-      id,
-      name,
-      email,
-      cnpjNormalized,
-    });
-
     await safeQuery(
       `INSERT INTO users (id, name, email, cnpj_access, password, role, created_at)
        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [id, name, email, cnpjNormalized, passwordHash, 'employee']
     );
-
-    console.log('✅ Usuário criado com sucesso:', email);
 
     const user = {
       id,
@@ -274,7 +273,7 @@ const registerHandler = async (req, res) => {
     return ok(res, { user, token }, 201);
   } catch (error) {
     console.error('🔥 ERRO NO REGISTER:', error);
-    return fail(res, 500, 'Erro interno ao registrar.', error.message);
+    return fail(res, 500, 'Erro interno ao registrar.');
   }
 };
 
