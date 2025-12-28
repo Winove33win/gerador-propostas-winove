@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import net from 'net';
 import { isDbConfigured, missingDbEnv, pool as dbPool } from './db.js';
 import { envSummary } from './env.js';
 
@@ -14,6 +15,8 @@ const __dirname = path.dirname(__filename);
 const port = Number(process.env.PORT || 3333);
 const host = '0.0.0.0';
 const distDir = path.join(__dirname, '..', 'dist');
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const DB_HOST = process.env.DB_HOST;
 
 /* =========================
    ENV / DB CONFIG
@@ -41,6 +44,41 @@ if (envSummary.missingDbEnv.length > 0) {
 if (envSummary.missingOptionalEnv.length > 0) {
   console.info(
     `[INFO] Variáveis opcionais não definidas: ${envSummary.missingOptionalEnv.join(', ')}.`
+  );
+}
+
+const isPrivateIpv4 = (ip) => {
+  const parts = ip.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
+    return false;
+  }
+  if (parts[0] === 10 || parts[0] === 127) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  return false;
+};
+
+const isPrivateIpv6 = (ip) => {
+  const normalized = ip.toLowerCase();
+  return (
+    normalized === '::1' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80')
+  );
+};
+
+const isPrivateIp = (ip) => {
+  const ipVersion = net.isIP(ip);
+  if (ipVersion === 4) return isPrivateIpv4(ip);
+  if (ipVersion === 6) return isPrivateIpv6(ip);
+  return false;
+};
+
+if (NODE_ENV === 'production' && DB_HOST && net.isIP(DB_HOST) && !isPrivateIp(DB_HOST)) {
+  console.warn(
+    '[WARN] DB_HOST aponta para um IP público em production. ' +
+      'Se o MySQL estiver no mesmo host, prefira 127.0.0.1 ou localhost.'
   );
 }
 
