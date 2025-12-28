@@ -77,6 +77,20 @@ const DocumentationView: React.FC = () => {
                 <span className="font-mono text-slate-400 text-xs">/httpdocs (root da aplicação)</span>
               </div>
             </div>
+            <div className="mt-8 rounded-2xl border border-blue-500/30 bg-blue-900/40 p-5 text-xs text-blue-100 leading-relaxed">
+              <div className="font-black uppercase tracking-widest text-[10px] text-blue-300">Nota operacional</div>
+              <p className="mt-3">
+                No Plesk, mantenha o gerenciamento do processo ativo apenas pelo painel. Antes de
+                executar qualquer <span className="font-mono">npm run start</span> manual, pare o processo
+                existente e volte a iniciar pelo Plesk para evitar conflitos de porta.
+              </p>
+              <p className="mt-3">
+                A porta é fornecida pela variável <span className="font-mono">PORT</span> do Plesk e o
+                backend já consome <span className="font-mono">process.env.PORT</span>. Se houver outro
+                serviço usando a porta, ajuste o <span className="font-mono">PORT</span> no painel ou
+                libere a porta ocupada.
+              </p>
+            </div>
           </div>
 
           <div className="bg-white border-2 border-slate-100 rounded-3xl p-8 shadow-sm">
@@ -87,7 +101,7 @@ const DocumentationView: React.FC = () => {
             <div className="space-y-3">
               {[
                 { k: 'NODE_ENV', v: 'production' },
-                { k: 'PORT', v: '3000' },
+                { k: 'PORT', v: 'definido pelo Plesk' },
                 { k: 'APP_URL', v: 'http://controle.winove.com.br' },
                 { k: 'DB_HOST', v: 'localhost' },
                 { k: 'DB_PORT', v: '3306' }
