@@ -21,6 +21,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
+const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
 
 const missingEnv = [...missingDbEnv];
 if (!JWT_SECRET) missingEnv.push('JWT_SECRET');
@@ -524,6 +525,9 @@ app.get('/api/health/db', healthDbHandler);
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
 
 app.get('/api/tables', requireRole('admin'), async (_req, res) => {
+  if (!ENABLE_DB_INTROSPECTION) {
+    return fail(res, 404, 'Endpoint desabilitado.');
+  }
   try {
     const rows = await safeQuery('SHOW TABLES');
     ok(res, rows);
