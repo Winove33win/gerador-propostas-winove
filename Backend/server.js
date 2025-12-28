@@ -3,7 +3,6 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import net from 'net';
@@ -26,17 +25,7 @@ const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3333);
 const host = '0.0.0.0';
-const resolveDistDir = () => {
-  if (process.env.DIST_DIR) {
-    return path.resolve(process.env.DIST_DIR);
-  }
-  const candidateInsideBackend = path.join(__dirname, 'dist');
-  if (fs.existsSync(candidateInsideBackend)) {
-    return candidateInsideBackend;
-  }
-  return path.join(__dirname, '..', 'dist');
-};
-const distDir = resolveDistDir();
+const distDir = path.join(__dirname, '..', 'dist');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DB_HOST = process.env.DB_HOST;
 
@@ -680,31 +669,17 @@ app.get('/health', healthHandler);
 app.get('/health/db', healthDbHandler);
 app.get('/health/version', healthVersionHandler);
 
-// ✅ aliases comuns (se o front chamar com /api)
-app.get('/api/health', healthHandler);
-app.get('/api/health/db', healthDbHandler);
-app.get('/api/health/version', healthVersionHandler);
-
 // Auth (público)
-app.post('/auth/login', authRateLimitMiddleware, loginHandler);
-
-// ✅ front está chamando /api/auth/login
 app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
 
 // Register (público)
-app.post('/auth/register', registerHandler);
 app.post('/api/auth/register', registerHandler);
 
 const publicRoutes = [
   'GET /health',
   'GET /health/db',
   'GET /health/version',
-  'GET /api/health',
-  'GET /api/health/db',
-  'GET /api/health/version',
-  'POST /auth/login',
   'POST /api/auth/login',
-  'POST /auth/register',
   'POST /api/auth/register',
 ];
 console.log('[BOOT] Rotas públicas registradas:', publicRoutes);
