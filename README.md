@@ -30,6 +30,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
   - **Payload:** campo `invite_token` dentro do JSON do `POST /api/auth/register`
   - **Header:** `x-invite-token: <TOKEN>`
 - **Front-end:** configure `VITE_REGISTER_INVITE_TOKEN` para que o token seja enviado automaticamente (payload + header).
+- **Endpoint de login:** `POST /api/auth/login`
 
 ## Startup (Plesk)
 

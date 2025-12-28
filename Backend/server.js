@@ -619,8 +619,8 @@ const registerHandler = async (req, res) => {
   }
 };
 
-app.post('/auth/login', authRateLimitMiddleware, loginHandler);
-app.post('/auth/register', registerHandler);
+app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
+app.post('/api/auth/register', registerHandler);
 
 /* =========================
    HEALTH
