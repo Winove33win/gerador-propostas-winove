@@ -121,6 +121,134 @@ const requireRole = (...roles) => (req, res, next) => {
 };
 
 /* =========================
+   AUTH RATE LIMITING
+========================= */
+const AUTH_RATE_LIMIT_WINDOW_MS = Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
+const AUTH_RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS || 5);
+const AUTH_RATE_LIMIT_LOCKOUT_BASE_MS = Number(
+  process.env.AUTH_RATE_LIMIT_LOCKOUT_BASE_MS || 5 * 60 * 1000
+);
+const AUTH_RATE_LIMIT_LOCKOUT_MAX_MS = Number(
+  process.env.AUTH_RATE_LIMIT_LOCKOUT_MAX_MS || 60 * 60 * 1000
+);
+
+const authRateLimitStore = {
+  ip: new Map(),
+  user: new Map(),
+};
+
+const authRateLimitMetrics = {
+  attempts: 0,
+  successes: 0,
+  failures: 0,
+  blocked: 0,
+  lockouts: 0,
+};
+
+const logAuthRateLimitMetrics = (event, meta = {}) => {
+  console.info('[AUTH_RATE_LIMIT_METRICS]', {
+    event,
+    metrics: { ...authRateLimitMetrics },
+    ...meta,
+  });
+};
+
+const getRateLimitKey = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  const ip =
+    (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim() ||
+    req.ip ||
+    req.connection?.remoteAddress ||
+    'unknown';
+  const payload = req.body?.auth || req.body || {};
+  const email = payload?.email?.trim()?.toLowerCase();
+  const cnpjAccess = payload?.cnpj_access ? normalizeCnpj(payload.cnpj_access) : null;
+  const userKey = email ? `${email}:${cnpjAccess || 'cnpj-unknown'}` : null;
+
+  return {
+    ipKey: `ip:${ip}`,
+    userKey: userKey ? `user:${userKey}` : null,
+  };
+};
+
+const resetRateLimitIfWindowExpired = (entry) => {
+  if (!entry) return;
+  const now = Date.now();
+  if (!entry.firstAttemptAt || now - entry.firstAttemptAt > AUTH_RATE_LIMIT_WINDOW_MS) {
+    entry.count = 0;
+    entry.firstAttemptAt = now;
+  }
+};
+
+const isLockedOut = (entry) => entry?.lockoutUntil && Date.now() < entry.lockoutUntil;
+
+const registerAuthFailure = (store, key, reason) => {
+  if (!key) return;
+  const now = Date.now();
+  const entry = store.get(key) || {
+    count: 0,
+    firstAttemptAt: now,
+    lockoutUntil: null,
+    lockoutLevel: 0,
+    lastFailureAt: null,
+  };
+
+  resetRateLimitIfWindowExpired(entry);
+  entry.count += 1;
+  entry.lastFailureAt = now;
+
+  if (entry.count >= AUTH_RATE_LIMIT_MAX_ATTEMPTS) {
+    entry.lockoutLevel += 1;
+    const backoffMs = Math.min(
+      AUTH_RATE_LIMIT_LOCKOUT_BASE_MS * 2 ** (entry.lockoutLevel - 1),
+      AUTH_RATE_LIMIT_LOCKOUT_MAX_MS
+    );
+    entry.lockoutUntil = now + backoffMs;
+    entry.count = 0;
+    entry.firstAttemptAt = now;
+    authRateLimitMetrics.lockouts += 1;
+    console.warn('[AUTH_RATE_LIMIT] Lockout aplicado.', {
+      key,
+      lockoutUntil: new Date(entry.lockoutUntil).toISOString(),
+      lockoutLevel: entry.lockoutLevel,
+      reason,
+    });
+    logAuthRateLimitMetrics('lockout', { key, reason });
+  }
+
+  store.set(key, entry);
+};
+
+const registerAuthSuccess = (store, key) => {
+  if (!key) return;
+  store.delete(key);
+};
+
+const authRateLimitMiddleware = (req, res, next) => {
+  const { ipKey, userKey } = getRateLimitKey(req);
+  const ipEntry = authRateLimitStore.ip.get(ipKey);
+  const userEntry = userKey ? authRateLimitStore.user.get(userKey) : null;
+
+  const lockedEntry = isLockedOut(ipEntry) ? ipEntry : isLockedOut(userEntry) ? userEntry : null;
+  if (lockedEntry) {
+    authRateLimitMetrics.blocked += 1;
+    const retryAfterSeconds = Math.ceil((lockedEntry.lockoutUntil - Date.now()) / 1000);
+    console.warn('[AUTH_RATE_LIMIT] Tentativa bloqueada.', {
+      ipKey,
+      userKey,
+      retryAfterSeconds,
+    });
+    logAuthRateLimitMetrics('blocked', { ipKey, userKey });
+    res.setHeader('Retry-After', retryAfterSeconds);
+    return fail(res, 429, 'Muitas tentativas. Tente novamente mais tarde.', {
+      retry_after_seconds: retryAfterSeconds,
+    });
+  }
+
+  return next();
+};
+
+/* =========================
    RELATIONS (proposals)
 ========================= */
 const readRelationMap = async (table, column, proposalIds = []) => {
@@ -174,16 +302,23 @@ const writeProposalRelations = async (proposalId, table, column, ids = []) => {
 ========================= */
 const loginHandler = async (req, res) => {
   try {
+    authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
     const email = body?.email?.trim();
     const cnpjAccess = body?.cnpj_access;
     const password = body?.password;
 
     if (!email || !cnpjAccess || !password) {
+      authRateLimitMetrics.failures += 1;
+      const { ipKey, userKey } = getRateLimitKey(req);
+      registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
+      registerAuthFailure(authRateLimitStore.user, userKey, 'missing_credentials');
+      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'missing_credentials' });
       return fail(res, 400, 'Credenciais incompletas.');
     }
 
     const normalizedCnpj = normalizeCnpj(cnpjAccess);
+    const { ipKey, userKey } = getRateLimitKey(req);
 
     // busca usuário por email
     const rows = await safeQuery(
@@ -195,28 +330,62 @@ const loginHandler = async (req, res) => {
     );
 
     const user = rows[0];
-    if (!user) return fail(res, 401, 'Credenciais inválidas.');
+    if (!user) {
+      authRateLimitMetrics.failures += 1;
+      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
+      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
+      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
+      return fail(res, 401, 'Credenciais inválidas.');
+    }
 
     // valida CNPJ (tripla validação)
     if (normalizeCnpj(user.cnpj_access) !== normalizedCnpj) {
+      authRateLimitMetrics.failures += 1;
+      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
+      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
+      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
     // valida senha (somente bcrypt)
     const stored = user.password || '';
     if (!isBcryptHash(stored)) {
+      authRateLimitMetrics.failures += 1;
+      registerAuthFailure(authRateLimitStore.ip, ipKey, 'password_reset_required');
+      registerAuthFailure(authRateLimitStore.user, userKey, 'password_reset_required');
+      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'password_reset_required' });
       return fail(res, 403, 'Senha precisa ser redefinida.');
     }
 
     const okPass = await bcrypt.compare(password, stored);
 
-    if (!okPass) return fail(res, 401, 'Credenciais inválidas.');
+    if (!okPass) {
+      authRateLimitMetrics.failures += 1;
+      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
+      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
+      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
+      return fail(res, 401, 'Credenciais inválidas.');
+    }
 
     const token = signToken(user);
+    authRateLimitMetrics.successes += 1;
+    registerAuthSuccess(authRateLimitStore.ip, ipKey);
+    registerAuthSuccess(authRateLimitStore.user, userKey);
+    console.info('[AUTH_RATE_LIMIT] Login bem-sucedido.', {
+      ipKey,
+      userKey,
+      metrics: { ...authRateLimitMetrics },
+    });
+    logAuthRateLimitMetrics('success', { ipKey, userKey });
 
     // ✅ PADRÃO para o front: sempre data
     return ok(res, { token, user: sanitizeUser(user) });
   } catch (error) {
+    authRateLimitMetrics.failures += 1;
+    const { ipKey, userKey } = getRateLimitKey(req);
+    registerAuthFailure(authRateLimitStore.ip, ipKey, 'server_error');
+    registerAuthFailure(authRateLimitStore.user, userKey, 'server_error');
+    logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'server_error' });
     console.error('AUTH_LOGIN_ERROR:', error);
     return fail(res, 500, 'Erro interno ao autenticar.');
   }
@@ -282,7 +451,7 @@ const registerHandler = async (req, res) => {
   }
 };
 
-app.post('/auth/login', loginHandler);
+app.post('/auth/login', authRateLimitMiddleware, loginHandler);
 app.post('/auth/register', registerHandler);
 
 app.use('/api', requireAuth);
