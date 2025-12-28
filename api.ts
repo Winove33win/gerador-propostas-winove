@@ -11,6 +11,7 @@ import {
 const API_BASE = '/api';
 const SESSION_KEY = 'prop_session';
 type Session = { user: User; token: string };
+const REGISTER_INVITE_TOKEN = import.meta.env?.VITE_REGISTER_INVITE_TOKEN ?? '';
 
 type ApiListResponse<T> = { data: T[] };
 type ApiItemResponse<T> = { data: T };
@@ -107,6 +108,7 @@ export const api = {
           email: payload.email,
           cnpj_access: payload.cnpj_access,
           password: payload.password,
+          ...(REGISTER_INVITE_TOKEN ? { invite_token: REGISTER_INVITE_TOKEN } : {}),
         },
       });
       storeSession({ user: response.data.user, token: response.data.token });
