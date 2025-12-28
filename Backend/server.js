@@ -202,20 +202,15 @@ const loginHandler = async (req, res) => {
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
-    // valida senha (bcrypt ou texto puro)
+    // valida senha (somente bcrypt)
     const stored = user.password || '';
-    const okPass = isBcryptHash(stored)
-      ? await bcrypt.compare(password, stored)
-      : stored === password;
+    if (!isBcryptHash(stored)) {
+      return fail(res, 403, 'Senha precisa ser redefinida.');
+    }
+
+    const okPass = await bcrypt.compare(password, stored);
 
     if (!okPass) return fail(res, 401, 'Credenciais inválidas.');
-
-    // migra senha texto puro -> bcrypt no 1º login bem sucedido
-    if (!isBcryptHash(stored)) {
-      const newHash = await bcrypt.hash(password, SALT_ROUNDS);
-      await safeQuery('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
-      user.password = newHash;
-    }
 
     const token = signToken(user);
 
