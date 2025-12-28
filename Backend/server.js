@@ -110,6 +110,16 @@ const requireAuth = (req, res, next) => {
   }
 };
 
+const requireRole = (...roles) => (req, res, next) => {
+  const currentRole = req.user?.role;
+
+  if (!currentRole || !roles.includes(currentRole)) {
+    return fail(res, 403, 'Acesso negado.');
+  }
+
+  return next();
+};
+
 /* =========================
    RELATIONS (proposals)
 ========================= */
@@ -306,7 +316,7 @@ app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
 
-app.get('/api/tables', async (_req, res) => {
+app.get('/api/tables', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SHOW TABLES');
     ok(res, rows);
@@ -323,7 +333,7 @@ app.get('/api/tables', async (_req, res) => {
 /* =========================
    COMPANIES
 ========================= */
-app.get('/api/companies', async (_req, res) => {
+app.get('/api/companies', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM companies ORDER BY name ASC');
     return ok(res, rows);
@@ -333,7 +343,7 @@ app.get('/api/companies', async (_req, res) => {
   }
 });
 
-app.get('/api/companies/:id', async (req, res) => {
+app.get('/api/companies/:id', requireRole('admin'), async (req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM companies WHERE id = ? LIMIT 1', [req.params.id]);
     const company = rows[0];
@@ -345,7 +355,7 @@ app.get('/api/companies/:id', async (req, res) => {
   }
 });
 
-app.post('/api/companies', async (req, res) => {
+app.post('/api/companies', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const company = {
@@ -371,7 +381,7 @@ app.post('/api/companies', async (req, res) => {
   }
 });
 
-app.put('/api/companies/:id', async (req, res) => {
+app.put('/api/companies/:id', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(
@@ -388,7 +398,7 @@ app.put('/api/companies/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/companies/:id', async (req, res) => {
+app.delete('/api/companies/:id', requireRole('admin'), async (req, res) => {
   try {
     await safeQuery('DELETE FROM companies WHERE id = ?', [req.params.id]);
     return res.status(204).send();
@@ -401,7 +411,7 @@ app.delete('/api/companies/:id', async (req, res) => {
 /* =========================
    SERVICES
 ========================= */
-app.get('/api/services', async (_req, res) => {
+app.get('/api/services', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM services ORDER BY description ASC');
     const data = rows.map((row) => ({ ...row, benefits: parseJsonArray(row.benefits) }));
@@ -412,7 +422,7 @@ app.get('/api/services', async (_req, res) => {
   }
 });
 
-app.get('/api/services/:id', async (req, res) => {
+app.get('/api/services/:id', requireRole('admin'), async (req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM services WHERE id = ? LIMIT 1', [req.params.id]);
     const service = rows[0];
@@ -424,7 +434,7 @@ app.get('/api/services/:id', async (req, res) => {
   }
 });
 
-app.post('/api/services', async (req, res) => {
+app.post('/api/services', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const service = {
@@ -449,7 +459,7 @@ app.post('/api/services', async (req, res) => {
   }
 });
 
-app.put('/api/services/:id', async (req, res) => {
+app.put('/api/services/:id', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(
@@ -466,7 +476,7 @@ app.put('/api/services/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/services/:id', async (req, res) => {
+app.delete('/api/services/:id', requireRole('admin'), async (req, res) => {
   try {
     await safeQuery('DELETE FROM services WHERE id = ?', [req.params.id]);
     return res.status(204).send();
@@ -479,7 +489,7 @@ app.delete('/api/services/:id', async (req, res) => {
 /* =========================
    OPTIONALS
 ========================= */
-app.get('/api/optionals', async (_req, res) => {
+app.get('/api/optionals', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM optionals ORDER BY description ASC');
     return ok(res, rows);
@@ -489,7 +499,7 @@ app.get('/api/optionals', async (_req, res) => {
   }
 });
 
-app.get('/api/optionals/:id', async (req, res) => {
+app.get('/api/optionals/:id', requireRole('admin'), async (req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM optionals WHERE id = ? LIMIT 1', [req.params.id]);
     const optional = rows[0];
@@ -501,7 +511,7 @@ app.get('/api/optionals/:id', async (req, res) => {
   }
 });
 
-app.post('/api/optionals', async (req, res) => {
+app.post('/api/optionals', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const optional = { id: p.id || crypto.randomUUID(), description: p.description, value: p.value || 0 };
@@ -519,7 +529,7 @@ app.post('/api/optionals', async (req, res) => {
   }
 });
 
-app.put('/api/optionals/:id', async (req, res) => {
+app.put('/api/optionals/:id', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(`UPDATE optionals SET description = ?, value = ? WHERE id = ?`, [p.description, p.value || 0, req.params.id]);
@@ -530,7 +540,7 @@ app.put('/api/optionals/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/optionals/:id', async (req, res) => {
+app.delete('/api/optionals/:id', requireRole('admin'), async (req, res) => {
   try {
     await safeQuery('DELETE FROM optionals WHERE id = ?', [req.params.id]);
     return res.status(204).send();
@@ -543,7 +553,7 @@ app.delete('/api/optionals/:id', async (req, res) => {
 /* =========================
    TERMS
 ========================= */
-app.get('/api/terms', async (_req, res) => {
+app.get('/api/terms', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM terms ORDER BY title ASC');
     return ok(res, rows);
@@ -553,7 +563,7 @@ app.get('/api/terms', async (_req, res) => {
   }
 });
 
-app.get('/api/terms/:id', async (req, res) => {
+app.get('/api/terms/:id', requireRole('admin'), async (req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM terms WHERE id = ? LIMIT 1', [req.params.id]);
     const term = rows[0];
@@ -565,7 +575,7 @@ app.get('/api/terms/:id', async (req, res) => {
   }
 });
 
-app.post('/api/terms', async (req, res) => {
+app.post('/api/terms', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const term = { id: p.id || crypto.randomUUID(), title: p.title, content: p.content };
@@ -578,7 +588,7 @@ app.post('/api/terms', async (req, res) => {
   }
 });
 
-app.put('/api/terms/:id', async (req, res) => {
+app.put('/api/terms/:id', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     await safeQuery(`UPDATE terms SET title = ?, content = ? WHERE id = ?`, [p.title, p.content, req.params.id]);
@@ -589,7 +599,7 @@ app.put('/api/terms/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/terms/:id', async (req, res) => {
+app.delete('/api/terms/:id', requireRole('admin'), async (req, res) => {
   try {
     await safeQuery('DELETE FROM terms WHERE id = ?', [req.params.id]);
     return res.status(204).send();
@@ -603,7 +613,7 @@ app.delete('/api/terms/:id', async (req, res) => {
    USERS (admin crud)
    Obs: mantém como estava, mas cuidado ao criar/atualizar senha
 ========================= */
-app.get('/api/users', async (_req, res) => {
+app.get('/api/users', requireRole('admin'), async (_req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM users ORDER BY name ASC');
     return ok(res, rows.map(sanitizeUser));
@@ -613,7 +623,7 @@ app.get('/api/users', async (_req, res) => {
   }
 });
 
-app.get('/api/users/:id', async (req, res) => {
+app.get('/api/users/:id', requireRole('admin'), async (req, res) => {
   try {
     const rows = await safeQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [req.params.id]);
     const user = rows[0];
@@ -625,7 +635,7 @@ app.get('/api/users/:id', async (req, res) => {
   }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const id = p.id || crypto.randomUUID();
@@ -654,7 +664,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.put('/api/users/:id', async (req, res) => {
+app.put('/api/users/:id', requireRole('admin'), async (req, res) => {
   try {
     const p = req.body || {};
     const passwordHash = p.password ? await bcrypt.hash(p.password, SALT_ROUNDS) : null;
@@ -673,7 +683,7 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
+app.delete('/api/users/:id', requireRole('admin'), async (req, res) => {
   try {
     await safeQuery('DELETE FROM users WHERE id = ?', [req.params.id]);
     return res.status(204).send();
