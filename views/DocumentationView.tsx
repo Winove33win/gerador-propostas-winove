@@ -90,6 +90,12 @@ const DocumentationView: React.FC = () => {
                 serviço usando a porta, ajuste o <span className="font-mono">PORT</span> no painel ou
                 libere a porta ocupada.
               </p>
+              <p className="mt-3">
+                Sem Plesk, mantenha o banco local usando <span className="font-mono">DB_HOST=127.0.0.1</span>
+                (ou <span className="font-mono">localhost</span>) e garanta que o usuário do MySQL tenha
+                grants para <span className="font-mono">localhost</span>. Isso elimina o warning e evita
+                falhas de conexão por <span className="font-mono">bind-address</span> ou firewall.
+              </p>
             </div>
           </div>
 
