@@ -426,11 +426,11 @@ const loginHandler = async (req, res) => {
   try {
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
-    const email = body?.email?.trim();
+    const email = body?.email?.trim()?.toLowerCase();
     const cnpjAccess = body?.cnpj_access;
-    const password = body?.password;
+    const passwordRaw = body?.password;
 
-    if (!email || !cnpjAccess || !password) {
+    if (!email || !cnpjAccess || !passwordRaw) {
       authRateLimitMetrics.failures += 1;
       const { ipKey, userKey } = getRateLimitKey(req);
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
@@ -479,10 +479,22 @@ const loginHandler = async (req, res) => {
       return fail(res, 403, 'Senha precisa ser redefinida.');
     }
 
+    console.log('[LOGIN] password typeof:', typeof passwordRaw);
+    console.log('[LOGIN] password raw JSON:', JSON.stringify(passwordRaw));
+    console.log(
+      '[LOGIN] password raw len:',
+      passwordRaw ? String(passwordRaw).length : null
+    );
+
+    const password = String(passwordRaw || '').trim();
+
+    console.log('[LOGIN] password trimmed JSON:', JSON.stringify(password));
+    console.log('[LOGIN] password trimmed len:', password.length);
+    console.log('[LOGIN] hash len:', String(stored).length);
+    console.log('[LOGIN] hash JSON:', JSON.stringify(stored));
+
     const okPass = await bcrypt.compare(password, stored);
-    console.log('PASSWORD RAW:', password);
-    console.log('HASH DB:', stored);
-    console.log('BCRYPT MATCH:', okPass);
+    console.log('[LOGIN] bcrypt match:', okPass);
 
     if (!okPass) {
       authRateLimitMetrics.failures += 1;
@@ -532,7 +544,7 @@ const registerHandler = async (req, res) => {
     }
 
     const name = payload?.name?.trim();
-    const email = payload?.email?.trim();
+    const email = payload?.email?.trim()?.toLowerCase();
     const cnpjAccess = payload?.cnpj_access;
     const password = payload?.password;
 
@@ -606,6 +618,18 @@ app.get('/health/db', healthDbHandler);
 app.get('/api/health/db', healthDbHandler);
 app.get('/api/auth/health', (_req, res) => ok(res, { ok: true }));
 app.get('/auth/health', (_req, res) => ok(res, { ok: true }));
+app.get('/debug/db', async (req, res) => {
+  const debugToken = process.env.DEBUG_DB_TOKEN;
+  const suppliedToken = req.headers['x-debug-token'] || req.query?.token;
+  if (debugToken && suppliedToken !== debugToken) {
+    return fail(res, 403, 'Acesso negado.');
+  }
+
+  const [rows] = await dbPool.query(
+    'SELECT DATABASE() AS db, @@hostname AS host, @@port AS port'
+  );
+  return res.json(rows[0]);
+});
 
 app.get('/api/tables', requireRole('admin'), async (_req, res) => {
   if (!ENABLE_DB_INTROSPECTION) {
