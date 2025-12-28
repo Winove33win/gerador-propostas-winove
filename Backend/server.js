@@ -480,6 +480,9 @@ const loginHandler = async (req, res) => {
     }
 
     const okPass = await bcrypt.compare(password, stored);
+    console.log('PASSWORD RAW:', password);
+    console.log('HASH DB:', stored);
+    console.log('BCRYPT MATCH:', okPass);
 
     if (!okPass) {
       authRateLimitMetrics.failures += 1;
