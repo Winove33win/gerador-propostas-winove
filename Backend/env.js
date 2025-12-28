@@ -42,6 +42,10 @@ export const OPTIONAL_ENV = [
     description: 'Token para habilitar cadastro (produção)',
   },
   {
+    key: 'ALLOW_PUBLIC_REGISTER',
+    description: 'Permite cadastro público em produção (true/false)',
+  },
+  {
     key: 'ENABLE_DB_INTROSPECTION',
     description: 'Habilita endpoint /api/tables (true/false)',
   },

@@ -17,8 +17,19 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
    `npm install`
 2. Configure o backend no arquivo `.env` (use `.env.example` como base), incluindo:
    - `COMMERCIAL_PANEL_USERNAME` e `COMMERCIAL_PANEL_PASSWORD` para proteger o painel em `/comercial-propostas`
+   - `REGISTER_INVITE_TOKEN` para exigir token no cadastro (produção)
+   - `ALLOW_PUBLIC_REGISTER=true` para liberar cadastro público em produção (ignora o invite)
+   - `VITE_REGISTER_INVITE_TOKEN` no front-end para enviar automaticamente o token no cadastro
 3. Run the app:
    `npm run dev`
+
+## Cadastro de usuários (invite/public)
+
+- **Cadastro público em produção:** defina `ALLOW_PUBLIC_REGISTER=true` no backend.
+- **Cadastro protegido por invite:** defina `REGISTER_INVITE_TOKEN` no backend e envie o token no cadastro:
+  - **Payload:** campo `invite_token` dentro do JSON do `POST /auth/register`
+  - **Header:** `x-invite-token: <TOKEN>`
+- **Front-end:** configure `VITE_REGISTER_INVITE_TOKEN` para que o token seja enviado automaticamente (payload + header).
 
 ## Startup (Plesk)
 

@@ -27,6 +27,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
 const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
+const ALLOW_PUBLIC_REGISTER = process.env.ALLOW_PUBLIC_REGISTER === 'true';
 const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
 
 if (envSummary.missingRequiredEnv.length > 0) {
@@ -515,12 +516,12 @@ const loginHandler = async (req, res) => {
 const registerHandler = async (req, res) => {
   try {
     const isProduction = process.env.NODE_ENV === 'production';
-    if (isProduction && !REGISTER_INVITE_TOKEN) {
+    if (isProduction && !ALLOW_PUBLIC_REGISTER && !REGISTER_INVITE_TOKEN) {
       return fail(res, 403, 'Cadastro desativado.');
     }
 
     const payload = req.body?.auth || req.body || {};
-    if (REGISTER_INVITE_TOKEN) {
+    if (REGISTER_INVITE_TOKEN && !ALLOW_PUBLIC_REGISTER) {
       const inviteToken = payload?.invite_token || req.headers['x-invite-token'];
       if (!inviteToken || inviteToken !== REGISTER_INVITE_TOKEN) {
         return fail(res, 403, 'Cadastro não autorizado.');
