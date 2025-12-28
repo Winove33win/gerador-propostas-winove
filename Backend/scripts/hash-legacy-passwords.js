@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { isDbConfigured, pool as dbPool } from '../db.js';
 
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS || 12);
