@@ -19,3 +19,8 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
    - `COMMERCIAL_PANEL_USERNAME` e `COMMERCIAL_PANEL_PASSWORD` para proteger o painel em `/comercial-propostas`
 3. Run the app:
    `npm run dev`
+
+## Startup (Plesk)
+
+O arquivo de startup esperado no Plesk é o `backend-start.js`, que apenas importa o
+`Backend/server.js` (ESM) para subir o servidor.
