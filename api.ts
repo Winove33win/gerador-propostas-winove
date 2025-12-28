@@ -93,16 +93,19 @@ export const api = {
   auth: {
     getCurrentUser: (): User | null => readSession()?.user ?? null,
     login: async (email: string, cnpj: string, password: string): Promise<User> => {
-      const response = await request<{ data: { user: User; token: string } }>('/auth/login', {
+      const response = await request<{ data: { user: User; token: string } }>(
+        `${API_BASE}/auth/login`,
+        {
         method: 'POST',
         body: { email, cnpj_access: cnpj, password },
-      });
+        }
+      );
       storeSession({ user: response.data.user, token: response.data.token });
       return response.data.user;
     },
     register: async (payload: Omit<User, 'id' | 'role'> & { role?: User['role'] }): Promise<User> => {
       const response = await request<{ data: { user: User; token: string } }>(
-        '/api/auth/register',
+        `${API_BASE}/auth/register`,
         {
         method: 'POST',
         headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
