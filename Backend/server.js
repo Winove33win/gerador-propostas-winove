@@ -113,6 +113,10 @@ if (NODE_ENV === 'production' && DB_HOST && net.isIP(DB_HOST) && !isPrivateIp(DB
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use((req, _res, next) => {
+  console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+  next();
+});
 if (process.env.DEBUG_ROUTES === '1') {
   app.use((req, _res, next) => {
     console.log(
@@ -469,7 +473,7 @@ const writeProposalRelations = async (proposalId, table, column, ids = []) => {
 ========================= */
 const loginHandler = async (req, res) => {
   try {
-    console.log(`[LOGIN_HIT] ${req.originalUrl}`);
+    console.log('[LOGIN_HIT]', { url: req.originalUrl, body: req.body });
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
     const email = body?.email?.trim()?.toLowerCase();
@@ -677,7 +681,9 @@ const healthDbHandler = async (_req, res) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
+app.get('/api/health/db', healthDbHandler);
 app.get('/health/version', healthVersionHandler);
+app.get('/api/health/version', healthVersionHandler);
 app.get('/version', healthVersionHandler);
 app.get('/api/version', healthVersionHandler);
 
@@ -687,23 +693,49 @@ app.post('/auth/login', authRateLimitMiddleware, loginHandler);
 
 // Register (público)
 app.post('/api/auth/register', registerHandler);
+app.post('/auth/register', registerHandler);
 
 const publicRoutes = [
   'GET /health',
   'GET /api/health',
   'GET /health/db',
+  'GET /api/health/db',
   'GET /health/version',
+  'GET /api/health/version',
   'GET /version',
   'GET /api/version',
   'POST /api/auth/login',
   'POST /auth/login',
   'POST /api/auth/register',
+  'POST /auth/register',
 ];
 console.log('[BOOT] Rotas públicas registradas:', publicRoutes);
 
 /* =========================
+   STATIC + SPA FALLBACK
+========================= */
+app.use('/comercial-propostas', requireCommercialPanelAuth);
+app.use(express.static(distDir, { index: false }));
+app.get('*', (req, res, next) => {
+  if (
+    req.path.startsWith('/api') ||
+    req.path.startsWith('/auth') ||
+    req.path.startsWith('/health') ||
+    req.path.startsWith('/debug') ||
+    req.path.startsWith('/comercial-propostas')
+  ) {
+    return next();
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return res.status(405).json({ error: 'Método não permitido.', data: null });
+  }
+  return res.sendFile(path.join(distDir, 'index.html'));
+});
+
+/* =========================
    PROTECTED API
 ========================= */
+app.use(requireAuth);
 app.use('/api', requireAuth);
 
 /* =========================
@@ -1334,29 +1366,9 @@ app.delete('/api/proposals/:id', async (req, res) => {
   }
 });
 
-/* =========================
-   STATIC + SPA FALLBACK
-========================= */
 app.use(['/api', '/auth', '/health', '/debug'], (_req, res) =>
   fail(res, 404, 'Rota não encontrada.')
 );
-
-app.use('/comercial-propostas', requireCommercialPanelAuth);
-app.use(express.static(distDir, { index: false }));
-app.get('*', (req, res) => {
-  if (
-    req.path.startsWith('/api') ||
-    req.path.startsWith('/auth') ||
-    req.path.startsWith('/health') ||
-    req.path.startsWith('/debug')
-  ) {
-    return res.status(404).json({ error: 'Rota não encontrada.', data: null });
-  }
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    return res.status(405).json({ error: 'Método não permitido.', data: null });
-  }
-  return res.sendFile(path.join(distDir, 'index.html'));
-});
 
 const startServer = (listenPort = port, listenHost = host) => {
   const server = app.listen(listenPort, listenHost, () => {
