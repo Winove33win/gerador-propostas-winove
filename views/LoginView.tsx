@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api } from '../api.ts';
 import { Hexagon, Lock, Mail, Building2, AlertCircle, KeyRound, UserPlus, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { User } from '../types';
 

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api } from '../api.ts';
 // Fixed: Added missing PlusCircle import
 import { TrendingUp, Users, Files, CheckCircle2, Clock, PlusCircle } from 'lucide-react';
 import { Client, Proposal } from '../types';

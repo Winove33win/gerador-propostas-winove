@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { api } from '../api';
+import { api } from '../api.ts';
 import { Client, EntityType } from '../types';
 import { Plus, Search, Edit3, Trash2, Download } from 'lucide-react';
 import { generateProposalPDF } from '../utils/pdfGenerator';

@@ -23,7 +23,7 @@ import EntityListView from './views/EntityListView';
 import ProposalWizard from './views/ProposalWizard';
 import DocumentationView from './views/DocumentationView';
 import LoginView from './views/LoginView';
-import { api } from './api';
+import { api } from './api.ts';
 import { User } from './types';
 
 type ViewType = 'dashboard' | 'companies' | 'clients' | 'services' | 'optionals' | 'terms' | 'proposals' | 'new-proposal' | 'doc';

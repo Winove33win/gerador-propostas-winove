@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { api } from '../api';
+import { api } from '../api.ts';
 import { Company, Client, Service, Optional, Term, Proposal } from '../types';
 import { Check, ChevronRight, ChevronLeft, Save, Download, Hexagon } from 'lucide-react';
 import { generateProposalPDF } from '../utils/pdfGenerator';
