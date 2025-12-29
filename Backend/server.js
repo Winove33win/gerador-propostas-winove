@@ -735,7 +735,6 @@ app.get('*', (req, res, next) => {
 /* =========================
    PROTECTED API
 ========================= */
-app.use(requireAuth);
 app.use('/api', requireAuth);
 
 /* =========================
