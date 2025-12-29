@@ -25,7 +25,7 @@ const __dirname = path.dirname(__filename);
 
 const port = Number(process.env.PORT || 3333);
 const host = '0.0.0.0';
-const distDir = path.join(__dirname, '..', 'dist');
+const distDir = path.resolve(__dirname, '..', 'dist');
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const DB_HOST = process.env.DB_HOST;
 
@@ -113,6 +113,14 @@ if (NODE_ENV === 'production' && DB_HOST && net.isIP(DB_HOST) && !isPrivateIp(DB
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+if (process.env.DEBUG_ROUTES === '1') {
+  app.use((req, _res, next) => {
+    console.log(
+      `[DEBUG_ROUTES] ${req.method} ${req.originalUrl} host=${req.headers.host}`
+    );
+    next();
+  });
+}
 
 /* =========================
    HELPERS (resposta padrão)
@@ -461,6 +469,7 @@ const writeProposalRelations = async (proposalId, table, column, ids = []) => {
 ========================= */
 const loginHandler = async (req, res) => {
   try {
+    console.log(`[LOGIN_HIT] ${req.originalUrl}`);
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
     const email = body?.email?.trim()?.toLowerCase();
@@ -666,20 +675,28 @@ const healthDbHandler = async (_req, res) => {
 
 // Health (público)
 app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 app.get('/health/db', healthDbHandler);
 app.get('/health/version', healthVersionHandler);
+app.get('/version', healthVersionHandler);
+app.get('/api/version', healthVersionHandler);
 
 // Auth (público)
 app.post('/api/auth/login', authRateLimitMiddleware, loginHandler);
+app.post('/auth/login', authRateLimitMiddleware, loginHandler);
 
 // Register (público)
 app.post('/api/auth/register', registerHandler);
 
 const publicRoutes = [
   'GET /health',
+  'GET /api/health',
   'GET /health/db',
   'GET /health/version',
+  'GET /version',
+  'GET /api/version',
   'POST /api/auth/login',
+  'POST /auth/login',
   'POST /api/auth/register',
 ];
 console.log('[BOOT] Rotas públicas registradas:', publicRoutes);
@@ -1325,7 +1342,7 @@ app.use(['/api', '/auth', '/health', '/debug'], (_req, res) =>
 );
 
 app.use('/comercial-propostas', requireCommercialPanelAuth);
-app.use(express.static(distDir));
+app.use(express.static(distDir, { index: false }));
 app.get('*', (req, res) => {
   if (
     req.path.startsWith('/api') ||
@@ -1341,11 +1358,20 @@ app.get('*', (req, res) => {
   return res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(port, host, () => {
-  console.log(`[OK] Server listening on http://${host}:${port}`);
-  if (isDbConfigured) {
-    console.log(
-      `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${envSummary.dbUser}`
-    );
-  }
-});
+const startServer = (listenPort = port, listenHost = host) => {
+  const server = app.listen(listenPort, listenHost, () => {
+    console.log(`[OK] Server listening on http://${listenHost}:${listenPort}`);
+    if (isDbConfigured) {
+      console.log(
+        `[OK] DB=${process.env.DB_DATABASE} HOST=${process.env.DB_HOST}:${process.env.DB_PORT} USER=${envSummary.dbUser}`
+      );
+    }
+  });
+  return server;
+};
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startServer();
+}
+
+export { app, startServer };

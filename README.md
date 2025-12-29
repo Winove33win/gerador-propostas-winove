@@ -36,7 +36,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/13MKrrDmRVJTHWPj08mClrK
 ## Startup (Plesk)
 
 - **Application Root:** raiz do repositório (ex.: `/agencia.winove.com.br/`)
-- **Startup file:** `Backend/server.js`
+- **Startup file:** `api.js`
 - **Document Root:** `<raiz>/dist`
 - **Reverse Proxy / API:** garanta que `/api` (e `/api/*`) seja encaminhado para o Node (backend), não para o `dist/`. Se houver regras de proxy no Plesk/Nginx/Apache, valide que a rota `/api/*` aponte para o processo Node da aplicação.
 
@@ -46,3 +46,19 @@ Depois, execute no **Application Root**:
 2. `npm run build`
 
 Isso garante que `node_modules/` e `dist/` sejam gerados corretamente.
+
+## Testes de health
+
+### Local
+
+```bash
+curl -i http://127.0.0.1:3333/health
+curl -i http://127.0.0.1:3333/api/health
+```
+
+### Produção (após Plesk apontar o Node como handler do domínio)
+
+```bash
+curl -i https://agencia.winove.com.br/health
+curl -i https://agencia.winove.com.br/api/health
+```
