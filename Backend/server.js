@@ -598,6 +598,26 @@ const recordAuthFailure = (req, reason) => {
   return { ipKey, userKey };
 };
 
+const redactAuthLogValue = (value) => {
+  if (!value) return value;
+  const redactions = [
+    'DB_HOST',
+    'DB_PASSWORD',
+    process.env.DB_HOST,
+    process.env.DB_PASSWORD,
+  ].filter(Boolean);
+  return redactions.reduce((current, token) => {
+    const escaped = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return current.replace(new RegExp(escaped, 'g'), '[REDACTED]');
+  }, String(value));
+};
+
+const logAuthError = (error) => {
+  const message = redactAuthLogValue(error?.message || '');
+  const stack = redactAuthLogValue(error?.stack || '');
+  console.error('[AUTH_LOGIN_ERROR]', { message, stack });
+};
+
 const loginHandler = async (req, res) => {
   try {
     authRateLimitMetrics.attempts += 1;
@@ -707,7 +727,7 @@ const loginHandler = async (req, res) => {
     }
   } catch (error) {
     recordAuthFailure(req, 'server_error');
-    console.error('AUTH_LOGIN_ERROR:', error);
+    logAuthError(error);
     return fail(res, 500, 'Erro interno ao autenticar.');
   }
 };
