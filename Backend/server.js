@@ -154,6 +154,16 @@ const ok = (res, data, status = 200) => res.status(status).json({ data });
 const fail = (res, status, error, details = undefined) =>
   res.status(status).json({ error, details, data: null });
 
+class AuthError extends Error {
+  constructor(message, statusCode, reason, details) {
+    super(message);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+    this.reason = reason;
+    this.details = details;
+  }
+}
+
 const normalizeCnpj = (value = '') => String(value).replace(/\D/g, '');
 
 const safeQuery = async (sql, params = []) => {
@@ -645,10 +655,15 @@ const loginHandler = async (req, res) => {
         hasEmail: Boolean(email),
         hasPassword: Boolean(password),
       });
-      return fail(res, 400, 'Credenciais incompletas.', {
-        content_type: req.headers['content-type'] || null,
-        body_empty: isBodyEmpty(req.body),
-      });
+      throw new AuthError(
+        'Credenciais incompletas.',
+        400,
+        'missing_credentials',
+        {
+          content_type: req.headers['content-type'] || null,
+          body_empty: isBodyEmpty(req.body),
+        }
+      );
     }
     const { ipKey, userKey } = getRateLimitKey(req);
 
@@ -674,8 +689,6 @@ const loginHandler = async (req, res) => {
       throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
     }
 
-    if (!dbPool) {
-
     // busca usuário por email
     const [rows] = await dbPool.query(
       `SELECT id, name, email, cnpj_access, password, role, created_at
@@ -689,7 +702,7 @@ const loginHandler = async (req, res) => {
     if (!user) {
       recordAuthFailure(req, 'invalid_credentials');
       console.warn('[LOGIN_FAIL] Usuário não encontrado.', { ip: req.ip, email });
-      return fail(res, 401, 'Credenciais inválidas.');
+      throw new AuthError('Credenciais inválidas.', 401, 'invalid_credentials');
     }
 
     if (isInactiveUser(user)) {
@@ -702,13 +715,13 @@ const loginHandler = async (req, res) => {
     if (!isBcryptHashValid(storedHash)) {
       recordAuthFailure(req, 'invalid_credentials');
       console.warn('[LOGIN_FAIL] Hash inválido no cadastro.', { ip: req.ip, userId: user.id });
-      return fail(res, 401, 'Credenciais inválidas.');
+      throw new AuthError('Credenciais inválidas.', 401, 'invalid_credentials');
     }
     const passwordOk = await bcrypt.compare(password, storedHash);
     if (!passwordOk) {
       recordAuthFailure(req, 'invalid_credentials');
       console.warn('[LOGIN_FAIL] Senha inválida.', { ip: req.ip, userId: user.id });
-      return fail(res, 401, 'Credenciais inválidas.');
+      throw new AuthError('Credenciais inválidas.', 401, 'invalid_credentials');
     }
 
     const token = signToken(user);
@@ -724,8 +737,10 @@ const loginHandler = async (req, res) => {
 
     // ✅ PADRÃO para o front: sempre data
     return ok(res, { token, user: sanitizeUser(user) });
-    }
   } catch (error) {
+    if (error instanceof AuthError) {
+      return fail(res, error.statusCode, error.message, error.details);
+    }
     recordAuthFailure(req, 'server_error');
     logAuthError(error);
     return fail(res, 500, 'Erro interno ao autenticar.');
