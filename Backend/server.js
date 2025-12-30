@@ -553,15 +553,16 @@ const loginHandler = async (req, res) => {
 
     // valida senha (bcryptjs)
     const stored = user.password || '';
-    if (!isBcryptHash(stored)) {
-      authRateLimitMetrics.failures += 1;
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'password_reset_required');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'password_reset_required');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'password_reset_required' });
-      return fail(res, 403, 'Senha precisa ser redefinida.');
-    }
+    let bcryptOk = false;
 
-    const bcryptOk = await bcrypt.compare(password, stored);
+    if (isBcryptHash(stored)) {
+      bcryptOk = await bcrypt.compare(password, stored);
+    } else if (stored && stored === password) {
+      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+      await safeQuery('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
+      bcryptOk = true;
+      console.info('[LOGIN_DEBUG_LEGACY_PASSWORD_UPGRADE]', { userId: user.id });
+    }
     console.log('[LOGIN_DEBUG_BCRYPT]', { bcryptOk });
 
     if (!bcryptOk) {
