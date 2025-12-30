@@ -302,6 +302,7 @@ const AUTH_RATE_LIMIT_LOCKOUT_BASE_MS = Number(
 const AUTH_RATE_LIMIT_LOCKOUT_MAX_MS = Number(
   process.env.AUTH_RATE_LIMIT_LOCKOUT_MAX_MS || 60 * 60 * 1000
 );
+const AUTH_RATE_LIMIT_TEST_MODE = process.env.AUTH_RATE_LIMIT_TEST_MODE === 'true';
 
 const authRateLimitStore = {
   ip: new Map(),
@@ -396,6 +397,13 @@ const registerAuthSuccess = (store, key) => {
 };
 
 const authRateLimitMiddleware = (req, res, next) => {
+  if (AUTH_RATE_LIMIT_TEST_MODE) {
+    authRateLimitMetrics.attempts = 0;
+    authRateLimitMetrics.failures = 0;
+    authRateLimitStore.ip.clear();
+    authRateLimitStore.user.clear();
+    return next();
+  }
   const { ipKey, userKey } = getRateLimitKey(req);
   const ipEntry = authRateLimitStore.ip.get(ipKey);
   const userEntry = userKey ? authRateLimitStore.user.get(userKey) : null;
@@ -480,6 +488,12 @@ const loginHandler = async (req, res) => {
     const normalizedCnpj = normalizeCnpj(body?.cnpj_access ?? '');
     const password = String(body?.password ?? '');
 
+    console.log('[LOGIN_DEBUG_INPUT]', {
+      email,
+      normalizedCnpj,
+      passLen: password?.length,
+    });
+
     if (!email || !normalizedCnpj || !password) {
       authRateLimitMetrics.failures += 1;
       const { ipKey, userKey } = getRateLimitKey(req);
@@ -492,7 +506,7 @@ const loginHandler = async (req, res) => {
 
     // busca usuário por email
     const rows = await safeQuery(
-      `SELECT *
+      `SELECT id, email, cnpj_access, password, role
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -500,6 +514,17 @@ const loginHandler = async (req, res) => {
     );
 
     const user = rows[0];
+    console.log(
+      '[LOGIN_DEBUG_USER_BY_EMAIL]',
+      user
+        ? {
+            id: user.id,
+            email_db: user.email,
+            cnpj_db: user.cnpj_access,
+            pass_db_prefix: String(user.password || '').slice(0, 7),
+          }
+        : null
+    );
     if (!user) {
       authRateLimitMetrics.failures += 1;
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
@@ -509,7 +534,13 @@ const loginHandler = async (req, res) => {
     }
 
     // valida CNPJ (tripla validação)
-    if (normalizeCnpj(user.cnpj_access) !== normalizedCnpj) {
+    const cnpjDbNorm = String(user.cnpj_access || '').replace(/\D/g, '');
+    console.log('[LOGIN_DEBUG_CNPJ]', {
+      normalizedCnpj,
+      cnpjDbNorm,
+      match: normalizedCnpj === cnpjDbNorm,
+    });
+    if (cnpjDbNorm !== normalizedCnpj) {
       authRateLimitMetrics.failures += 1;
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
       registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
@@ -527,22 +558,10 @@ const loginHandler = async (req, res) => {
       return fail(res, 403, 'Senha precisa ser redefinida.');
     }
 
-    console.log('[LOGIN] email JSON:', JSON.stringify(email));
-    console.log('[LOGIN] password typeof:', typeof password);
-    console.log('[LOGIN] password raw JSON:', JSON.stringify(password));
-    console.log('[LOGIN] password raw len:', password.length);
-    console.log('[LOGIN] hash len:', String(stored).length);
-    console.log('[LOGIN] hash JSON:', JSON.stringify(stored));
-    const okPass = await bcrypt.compare(password, stored);
-    console.log('LOGIN DEBUG', {
-      email,
-      cnpj: normalizedCnpj,
-      password,
-      passwordFromDb: stored,
-      bcryptResult: okPass,
-    });
+    const bcryptOk = await bcrypt.compare(password, stored);
+    console.log('[LOGIN_DEBUG_BCRYPT]', { bcryptOk });
 
-    if (!okPass) {
+    if (!bcryptOk) {
       authRateLimitMetrics.failures += 1;
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
       registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
