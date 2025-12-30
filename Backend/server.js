@@ -146,15 +146,7 @@ const safeQuery = async (sql, params = []) => {
 };
 
 const assertUsersSchema = async () => {
-  const REQUIRED = [
-    'id',
-    'name',
-    'email',
-    'cnpj_access',
-    'password',
-    'role',
-    'created_at',
-  ];
+  const REQUIRED = ['id', 'name', 'email', 'cnpj_access', 'password', 'role'];
   if (!dbPool) {
     throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
   }
@@ -162,9 +154,10 @@ const assertUsersSchema = async () => {
   const names = new Set(cols.map((col) => col.Field));
   const missing = REQUIRED.filter((column) => !names.has(column));
   if (missing.length) {
-    throw new Error(`[DB_SCHEMA] Tabela users sem colunas: ${missing.join(', ')}`);
+    console.error('[DB_SCHEMA_ERROR] users missing:', missing);
+    process.exit(1);
   }
-  console.log('[DB_SCHEMA] users OK:', REQUIRED.join(', '));
+  console.log('[DB_SCHEMA_OK] users schema valid');
 };
 
 const sanitizeUser = (user) => {
@@ -194,21 +187,7 @@ const isBcryptHash = (v = '') =>
 
 const isBcryptHashValid = (v = '') => isBcryptHash(v) && v.length === 60;
 
-const isInactiveUser = (user) => {
-  if (!user) return true;
-  const status = user.status;
-  if (status !== undefined && status !== null) {
-    const normalizedStatus = String(status).trim().toLowerCase();
-    const activeStatuses = new Set(['ativo', 'active', 'enabled', '1', 'true']);
-    if (!activeStatuses.has(normalizedStatus)) return true;
-  }
-  const ativo = user.ativo;
-  if (ativo !== undefined && ativo !== null) {
-    const normalizedAtivo = String(ativo).trim().toLowerCase();
-    if (normalizedAtivo === '0' || normalizedAtivo === 'false') return true;
-  }
-  return false;
-};
+const isInactiveUser = (_user) => false;
 
 const signToken = (user) => {
   if (!JWT_SECRET) {
@@ -220,7 +199,6 @@ const signToken = (user) => {
       email: user.email,
       role: user.role,
       cnpj_access: normalizeCnpj(user.cnpj_access || ''),
-      token_version: user.token_version ?? undefined,
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -250,15 +228,6 @@ const requireAuth = async (req, res, next) => {
 
     if (isInactiveUser(user)) {
       return fail(res, 403, 'Usuário inativo.');
-    }
-
-    if (user.token_version !== undefined && user.token_version !== null) {
-      if (payload.token_version === undefined || payload.token_version === null) {
-        return fail(res, 403, 'Token revogado.');
-      }
-      if (String(payload.token_version) !== String(user.token_version)) {
-        return fail(res, 403, 'Token revogado.');
-      }
     }
 
     req.user = {
@@ -621,6 +590,13 @@ const loginHandler = async (req, res) => {
         ip: req.ip,
       });
     }
+
+    console.log('[LOGIN_ATTEMPT]', {
+      email,
+      hasPassword: Boolean(password),
+      dbHost: process.env.DB_HOST,
+      dbName: process.env.DB_DATABASE,
+    });
 
     if (!email || !password) {
       recordAuthFailure(req, 'missing_credentials');
