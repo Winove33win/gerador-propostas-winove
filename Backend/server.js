@@ -609,9 +609,13 @@ const loginHandler = async (req, res) => {
     }
     const { ipKey, userKey } = getRateLimitKey(req);
 
+    if (!dbPool) {
+      throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
+    }
+
     // busca usuário por email
-    const rows = await safeQuery(
-      `SELECT id, email, cnpj_access, password, role, status, ativo, token_version
+    const [rows] = await dbPool.query(
+      `SELECT id, name, email, cnpj_access, password, role, status, ativo, token_version
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -629,36 +633,13 @@ const loginHandler = async (req, res) => {
       return fail(res, 403, 'Usuário inativo.');
     }
 
-    // valida senha (bcryptjs)
-    const stored = String(user.password || '');
-    const storedTrimmed = stored.trim();
-    let bcryptOk = false;
-
-    if (isBcryptHash(storedTrimmed)) {
-      if (DEBUG_AUTH) {
-        console.info('[LOGIN_DEBUG]', {
-          email,
-          hasUser: Boolean(user),
-          hashLen: storedTrimmed.length,
-          hashPrefix: storedTrimmed.slice(0, 7),
-          passLen: password.length,
-        });
-      }
-      if (!isBcryptHashValid(storedTrimmed)) {
-        console.warn('[AUTH_BCRYPT_INVALID_HASH]', {
-          userId: user.id,
-          length: storedTrimmed.length,
-          prefix: storedTrimmed.slice(0, 4),
-        });
-      }
-      bcryptOk = await bcrypt.compare(password, storedTrimmed);
-    } else if (storedTrimmed && storedTrimmed === password) {
-      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-      await safeQuery('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
-      bcryptOk = true;
-      console.info('[LOGIN_DEBUG_LEGACY_PASSWORD_UPGRADE]', { userId: user.id });
+    const storedHash = String(user.password || '').trim();
+    if (!isBcryptHashValid(storedHash)) {
+      recordAuthFailure(req, 'invalid_credentials');
+      return fail(res, 401, 'Credenciais inválidas.');
     }
-    if (!bcryptOk) {
+    const passwordOk = await bcrypt.compare(password, storedHash);
+    if (!passwordOk) {
       recordAuthFailure(req, 'invalid_credentials');
       return fail(res, 401, 'Credenciais inválidas.');
     }
