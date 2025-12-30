@@ -333,13 +333,14 @@ const getRateLimitKey = (req) => {
     req.connection?.remoteAddress ||
     'unknown';
   const payload = req.body?.auth || req.body || {};
-  const email = payload?.email?.trim()?.toLowerCase();
-  const cnpjAccess = payload?.cnpj_access ? normalizeCnpj(payload.cnpj_access) : null;
-  const userKey = email ? `${email}:${cnpjAccess || 'cnpj-unknown'}` : null;
+  const email =
+    payload?.email?.trim?.()?.toLowerCase() ||
+    payload?.login?.trim?.()?.toLowerCase() ||
+    payload?.usuario?.trim?.()?.toLowerCase();
 
   return {
     ipKey: `ip:${ip}`,
-    userKey: userKey ? `user:${userKey}` : null,
+    userKey: email ? `user:${email}` : null,
   };
 };
 
@@ -484,17 +485,17 @@ const loginHandler = async (req, res) => {
     console.log('[LOGIN_HIT]', { url: req.originalUrl, body: req.body });
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
-    const email = String(body?.email ?? '').trim().toLowerCase();
-    const normalizedCnpj = normalizeCnpj(body?.cnpj_access ?? '');
-    const password = String(body?.password ?? '');
+    const email = String(body?.email ?? body?.login ?? body?.usuario ?? '')
+      .trim()
+      .toLowerCase();
+    const password = String(body?.password ?? body?.senha ?? body?.pass ?? '');
 
     console.log('[LOGIN_DEBUG_INPUT]', {
       email,
-      normalizedCnpj,
       passLen: password?.length,
     });
 
-    if (!email || !normalizedCnpj || !password) {
+    if (!email || !password) {
       authRateLimitMetrics.failures += 1;
       const { ipKey, userKey } = getRateLimitKey(req);
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
@@ -526,21 +527,6 @@ const loginHandler = async (req, res) => {
         : null
     );
     if (!user) {
-      authRateLimitMetrics.failures += 1;
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
-      return fail(res, 401, 'Credenciais inválidas.');
-    }
-
-    // valida CNPJ (tripla validação)
-    const cnpjDbNorm = String(user.cnpj_access || '').replace(/\D/g, '');
-    console.log('[LOGIN_DEBUG_CNPJ]', {
-      normalizedCnpj,
-      cnpjDbNorm,
-      match: normalizedCnpj === cnpjDbNorm,
-    });
-    if (cnpjDbNorm !== normalizedCnpj) {
       authRateLimitMetrics.failures += 1;
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
       registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');

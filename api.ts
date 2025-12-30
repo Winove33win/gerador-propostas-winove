@@ -19,12 +19,12 @@ const getItem = async <T>(path: string): Promise<T> => {
 export const api = {
   auth: {
     getCurrentUser: (): User | null => apiClient.readSession()?.user ?? null,
-    login: async (email: string, cnpj: string, password: string): Promise<User> => {
+    login: async (email: string, password: string): Promise<User> => {
       const response = await apiClient.request<{ data: { user: User; token: string } }>(
         '/auth/login',
         {
           method: 'POST',
-          body: { email, cnpj_access: cnpj, password },
+          body: { email, password },
           auth: false,
         }
       );
