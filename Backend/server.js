@@ -494,9 +494,17 @@ const writeProposalRelations = async (proposalId, table, column, ids = []) => {
 /* =========================
    AUTH ROUTES
 ========================= */
+const recordAuthFailure = (req, reason) => {
+  authRateLimitMetrics.failures += 1;
+  const { ipKey, userKey } = getRateLimitKey(req);
+  registerAuthFailure(authRateLimitStore.ip, ipKey, reason);
+  registerAuthFailure(authRateLimitStore.user, userKey, reason);
+  logAuthRateLimitMetrics('failure', { ipKey, userKey, reason });
+  return { ipKey, userKey };
+};
+
 const loginHandler = async (req, res) => {
   try {
-    console.log('[LOGIN_HIT]', { url: req.originalUrl, body: req.body });
     authRateLimitMetrics.attempts += 1;
 
     const body = getAuthPayload(req);
@@ -506,25 +514,15 @@ const loginHandler = async (req, res) => {
       .toLowerCase();
     const password = String(body?.password ?? body?.senha ?? body?.pass ?? '');
 
-
-    console.log('[LOGIN_DEBUG_INPUT]', {
-      email,
-      passLen: password?.length,
-    });
-
     if (!email || !password) {
-      authRateLimitMetrics.failures += 1;
-      const { ipKey, userKey } = getRateLimitKey(req);
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'missing_credentials');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'missing_credentials' });
+      recordAuthFailure(req, 'missing_credentials');
       return fail(res, 400, 'Credenciais incompletas.');
     }
     const { ipKey, userKey } = getRateLimitKey(req);
 
     // busca usuário por email
     const rows = await safeQuery(
-      `SELECT id, email, cnpj_access, password, role
+      `SELECT id, email, cnpj_access, password, role, status, ativo, token_version
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -532,23 +530,14 @@ const loginHandler = async (req, res) => {
     );
 
     const user = rows[0];
-    console.log(
-      '[LOGIN_DEBUG_USER_BY_EMAIL]',
-      user
-        ? {
-            id: user.id,
-            email_db: user.email,
-            cnpj_db: user.cnpj_access,
-            pass_db_prefix: String(user.password || '').slice(0, 7),
-          }
-        : null
-    );
     if (!user) {
-      authRateLimitMetrics.failures += 1;
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
+      recordAuthFailure(req, 'invalid_credentials');
       return fail(res, 401, 'Credenciais inválidas.');
+    }
+
+    if (isInactiveUser(user)) {
+      recordAuthFailure(req, 'user_inactive');
+      return fail(res, 403, 'Usuário inativo.');
     }
 
     // valida senha (bcryptjs)
@@ -563,13 +552,8 @@ const loginHandler = async (req, res) => {
       bcryptOk = true;
       console.info('[LOGIN_DEBUG_LEGACY_PASSWORD_UPGRADE]', { userId: user.id });
     }
-    console.log('[LOGIN_DEBUG_BCRYPT]', { bcryptOk });
-
     if (!bcryptOk) {
-      authRateLimitMetrics.failures += 1;
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
+      recordAuthFailure(req, 'invalid_credentials');
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
@@ -587,11 +571,7 @@ const loginHandler = async (req, res) => {
     // ✅ PADRÃO para o front: sempre data
     return ok(res, { token, user: sanitizeUser(user) });
   } catch (error) {
-    authRateLimitMetrics.failures += 1;
-    const { ipKey, userKey } = getRateLimitKey(req);
-    registerAuthFailure(authRateLimitStore.ip, ipKey, 'server_error');
-    registerAuthFailure(authRateLimitStore.user, userKey, 'server_error');
-    logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'server_error' });
+    recordAuthFailure(req, 'server_error');
     console.error('AUTH_LOGIN_ERROR:', error);
     return fail(res, 500, 'Erro interno ao autenticar.');
   }
@@ -821,10 +801,6 @@ app.get('/api/tables', requireRole('admin'), async (_req, res) => {
     fail(res, 500, 'Erro ao listar tabelas.', error?.message);
   }
 });
-
-/* =========================
-   COMPANIES
-========================= */
 
 /* =========================
    COMPANIES
