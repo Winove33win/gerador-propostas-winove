@@ -175,7 +175,9 @@ const assertUsersSchema = async () => {
   const names = new Set(cols.map((col) => col.Field));
   const missing = REQUIRED.filter((column) => !names.has(column));
   const extra = [...names].filter((column) => !REQUIRED.includes(column));
-  if (missing.length || (STRICT_SCHEMA && extra.length)) {
+  const hasMissing = missing.length > 0;
+  const hasExtra = extra.length > 0;
+  if (hasMissing || (STRICT_SCHEMA && hasExtra)) {
     console.error('[DB_SCHEMA_ERROR] users schema mismatch:', { missing, extra });
     throw new Error('Users schema mismatch');
   }
