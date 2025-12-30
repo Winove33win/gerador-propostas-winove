@@ -41,6 +41,11 @@ const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
 const DEBUG_TOKEN = process.env.DEBUG_TOKEN;
 const DEBUG_AUTH = process.env.DEBUG_AUTH === '1';
 
+if (!JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET não definido');
+  process.exit(1);
+}
+
 if (envSummary.missingRequiredEnv.length > 0 || envSummary.missingDbEnv.length > 0) {
   console.error('[FATAL] Variáveis críticas ausentes.', {
     missingRequired: envSummary.missingRequiredEnv,
