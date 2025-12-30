@@ -145,6 +145,28 @@ const safeQuery = async (sql, params = []) => {
   return rows;
 };
 
+const assertUsersSchema = async () => {
+  const REQUIRED = [
+    'id',
+    'name',
+    'email',
+    'cnpj_access',
+    'password',
+    'role',
+    'created_at',
+  ];
+  if (!dbPool) {
+    throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
+  }
+  const [cols] = await dbPool.query('SHOW COLUMNS FROM users');
+  const names = new Set(cols.map((col) => col.Field));
+  const missing = REQUIRED.filter((column) => !names.has(column));
+  if (missing.length) {
+    throw new Error(`[DB_SCHEMA] Tabela users sem colunas: ${missing.join(', ')}`);
+  }
+  console.log('[DB_SCHEMA] users OK:', REQUIRED.join(', '));
+};
+
 const sanitizeUser = (user) => {
   if (!user) return null;
   const { password, ...safeUser } = user;
@@ -615,7 +637,7 @@ const loginHandler = async (req, res) => {
 
     // busca usuário por email
     const [rows] = await dbPool.query(
-      `SELECT id, name, email, cnpj_access, password, role, status, ativo, token_version
+      `SELECT id, name, email, cnpj_access, password, role
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -746,6 +768,7 @@ const healthDbHandler = async (_req, res) => {
       'SELECT DATABASE() AS db, @@hostname AS host, @@port AS port'
     );
     const dbInfo = rows?.[0] || {};
+    console.log('[DB_FINGERPRINT]', dbInfo);
     return res.status(200).json({
       ok: true,
       db: dbInfo.db || process.env.DB_DATABASE || process.env.DB_NAME,
@@ -1450,7 +1473,10 @@ app.use(['/api', '/auth', '/health', '/debug'], (_req, res) =>
   fail(res, 404, 'Rota não encontrada.')
 );
 
-const startServer = (listenPort = port, listenHost = host) => {
+const startServer = async (listenPort = port, listenHost = host) => {
+  if (isDbConfigured) {
+    await assertUsersSchema();
+  }
   const server = app.listen(listenPort, listenHost, () => {
     console.log(`[OK] Server listening on http://${listenHost}:${listenPort}`);
     if (isDbConfigured) {
@@ -1463,7 +1489,10 @@ const startServer = (listenPort = port, listenHost = host) => {
 };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  startServer();
+  startServer().catch((error) => {
+    console.error('[FATAL] Falha ao iniciar servidor.', error);
+    process.exit(1);
+  });
 }
 
 export { app, startServer };
