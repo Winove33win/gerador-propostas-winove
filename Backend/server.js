@@ -327,7 +327,43 @@ const logAuthRateLimitMetrics = (event, meta = {}) => {
   });
 };
 
+const AUTH_PAYLOAD_FIELDS = new Set([
+  'email',
+  'login',
+  'usuario',
+  'password',
+  'senha',
+  'pass',
+  'name',
+  'cnpj_access',
+  'invite_token',
+]);
+
+const isAuthPayloadObject = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  if (keys.length === 0) return false;
+  return keys.some((key) => AUTH_PAYLOAD_FIELDS.has(key));
+};
+
 const getAuthPayload = (req) => {
+
+  // Prioriza req.body.auth quando for objeto válido com campos esperados ou JSON parseável;
+  // se vier string inválida ou objeto vazio/inesperado, faz fallback para req.body.
+  const rawAuth = req.body?.auth;
+
+  if (rawAuth !== undefined) {
+    if (typeof rawAuth === 'string') {
+      try {
+        const parsed = JSON.parse(rawAuth);
+        if (isAuthPayloadObject(parsed)) {
+          return parsed;
+        }
+      } catch {
+        // fallback handled below
+      }
+      return req.body ?? {};
+
   const raw = req.body?.auth ?? req.body ?? {};
   if (typeof raw === 'string' || Buffer.isBuffer(raw)) {
     const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : raw;
@@ -341,9 +377,17 @@ const getAuthPayload = (req) => {
         });
       }
       return {};
+
     }
+
+    if (isAuthPayloadObject(rawAuth)) {
+      return rawAuth;
+    }
+
+    return req.body ?? {};
   }
-  return raw;
+
+  return req.body ?? {};
 };
 
 const isBodyEmpty = (body) => {
