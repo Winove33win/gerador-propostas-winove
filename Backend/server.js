@@ -146,16 +146,18 @@ const safeQuery = async (sql, params = []) => {
 };
 
 const assertUsersSchema = async () => {
-  const REQUIRED = ['id', 'name', 'email', 'cnpj_access', 'password', 'role'];
+  const REQUIRED = ['id', 'name', 'email', 'cnpj_access', 'password', 'role', 'created_at'];
   if (!dbPool) {
     throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
   }
+  console.log('[DB_SCHEMA_CHECK] Validando schema da tabela users...');
   const [cols] = await dbPool.query('SHOW COLUMNS FROM users');
   const names = new Set(cols.map((col) => col.Field));
   const missing = REQUIRED.filter((column) => !names.has(column));
-  if (missing.length) {
-    console.error('[DB_SCHEMA_ERROR] users missing:', missing);
-    process.exit(1);
+  const extra = [...names].filter((column) => !REQUIRED.includes(column));
+  if (missing.length || extra.length) {
+    console.error('[DB_SCHEMA_ERROR] users schema mismatch:', { missing, extra });
+    throw new Error('Users schema mismatch');
   }
   console.log('[DB_SCHEMA_OK] users schema valid');
 };
@@ -600,6 +602,11 @@ const loginHandler = async (req, res) => {
 
     if (!email || !password) {
       recordAuthFailure(req, 'missing_credentials');
+      console.warn('[LOGIN_FAIL] Credenciais incompletas.', {
+        ip: req.ip,
+        hasEmail: Boolean(email),
+        hasPassword: Boolean(password),
+      });
       return fail(res, 400, 'Credenciais incompletas.', {
         content_type: req.headers['content-type'] || null,
         body_empty: isBodyEmpty(req.body),
@@ -613,7 +620,7 @@ const loginHandler = async (req, res) => {
 
     // busca usuário por email
     const [rows] = await dbPool.query(
-      `SELECT id, name, email, cnpj_access, password, role
+      `SELECT id, name, email, cnpj_access, password, role, created_at
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -623,22 +630,26 @@ const loginHandler = async (req, res) => {
     const user = rows[0];
     if (!user) {
       recordAuthFailure(req, 'invalid_credentials');
+      console.warn('[LOGIN_FAIL] Usuário não encontrado.', { ip: req.ip, email });
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
     if (isInactiveUser(user)) {
       recordAuthFailure(req, 'user_inactive');
+      console.warn('[LOGIN_FAIL] Usuário inativo.', { ip: req.ip, userId: user.id });
       return fail(res, 403, 'Usuário inativo.');
     }
 
     const storedHash = String(user.password || '').trim();
     if (!isBcryptHashValid(storedHash)) {
       recordAuthFailure(req, 'invalid_credentials');
+      console.warn('[LOGIN_FAIL] Hash inválido no cadastro.', { ip: req.ip, userId: user.id });
       return fail(res, 401, 'Credenciais inválidas.');
     }
     const passwordOk = await bcrypt.compare(password, storedHash);
     if (!passwordOk) {
       recordAuthFailure(req, 'invalid_credentials');
+      console.warn('[LOGIN_FAIL] Senha inválida.', { ip: req.ip, userId: user.id });
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
