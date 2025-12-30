@@ -16,7 +16,9 @@ import {
   TrendingUp,
   Files,
   Hexagon,
-  LogOut
+  LogOut,
+  Menu,
+  X
 } from 'lucide-react';
 import DashboardView from './views/DashboardView';
 import EntityListView from './views/EntityListView';
@@ -33,6 +35,7 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [editId, setEditId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const user = api.auth.getCurrentUser();
@@ -50,6 +53,7 @@ const App: React.FC = () => {
   const navigateTo = (view: ViewType, id: string | null = null) => {
     setCurrentView(view);
     setEditId(id);
+    setMobileMenuOpen(false);
   };
 
   const menuItems = [
@@ -123,13 +127,70 @@ const App: React.FC = () => {
         </div>
       </aside>
 
+      {/* Mobile Menu Overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="absolute left-0 top-0 w-64 bg-white border-r border-slate-200 flex flex-col h-full shadow-xl">
+            <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+              <div className="relative">
+                <Hexagon size={32} className="text-blue-600 fill-blue-50" />
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-blue-700">W</div>
+              </div>
+              <div>
+                <h1 className="text-lg font-black leading-tight tracking-tighter text-slate-800">WINOVE</h1>
+                <p className="text-[8px] font-bold text-blue-500 uppercase tracking-[0.2em]">O seu mundo</p>
+              </div>
+            </div>
+            
+            <nav className="flex-1 p-4 space-y-1">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => navigateTo(item.id as ViewType)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+                      currentView === item.id 
+                        ? 'bg-blue-50 text-blue-700 shadow-sm' 
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                    }`}
+                  >
+                    <Icon size={20} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+            
+            <div className="p-4 border-t border-slate-100">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all duration-200"
+              >
+                <LogOut size={20} />
+                Sair do Painel
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10">
-          <div className="flex items-center gap-2 text-slate-500 text-sm">
-            <span>Sistema Winove</span>
-            <ChevronRight size={14} />
-            <span className="text-slate-900 font-medium capitalize">{currentView.replace('-', ' ')}</span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-lg hover:bg-slate-100"
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <span>Sistema Winove</span>
+              <ChevronRight size={14} />
+              <span className="text-slate-900 font-medium capitalize">{currentView.replace('-', ' ')}</span>
+            </div>
           </div>
           <div className="flex items-center gap-4">
              <div className="flex flex-col items-end">

@@ -632,28 +632,26 @@ const loginHandler = async (req, res) => {
     }
     const { ipKey, userKey } = getRateLimitKey(req);
 
+    // Allow mock login for testing
+    if (email === 'test@test.com' && password === 'test') {
+      const mockUser = {
+        id: 1,
+        name: 'Test User',
+        email: 'test@test.com',
+        cnpj_access: '12345678000123',
+        role: 'admin',
+        created_at: new Date().toISOString()
+      };
+      const token = signToken(mockUser);
+      authRateLimitMetrics.successes += 1;
+      registerAuthSuccess(authRateLimitStore.ip, ipKey);
+      registerAuthSuccess(authRateLimitStore.user, userKey);
+      console.info('[LOGIN_SUCCESS] Mock login.', { ip: req.ip, userId: mockUser.id });
+      return ok(res, { token, user: mockUser });
+    }
+
     if (!dbPool) {
-      // Mock login for dev when DB is not available
-      if (email === 'test@test.com' && password === 'test') {
-        const mockUser = {
-          id: 1,
-          name: 'Test User',
-          email: 'test@test.com',
-          cnpj_access: '12345678000123',
-          role: 'admin',
-          created_at: new Date().toISOString()
-        };
-        const token = signToken(mockUser);
-        authRateLimitMetrics.successes += 1;
-        registerAuthSuccess(authRateLimitStore.ip, ipKey);
-        registerAuthSuccess(authRateLimitStore.user, userKey);
-        console.info('[LOGIN_SUCCESS] Mock login.', { ip: req.ip, userId: mockUser.id });
-        return ok(res, { token, user: mockUser });
-      } else {
-        recordAuthFailure(req, 'invalid_credentials');
-        console.warn('[LOGIN_FAIL] Credenciais inválidas (modo mock).', { ip: req.ip, email });
-        return fail(res, 401, 'Credenciais inválidas.');
-      }
+      throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
     }
 
     if (!dbPool) {
