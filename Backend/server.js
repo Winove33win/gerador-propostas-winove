@@ -333,13 +333,14 @@ const getRateLimitKey = (req) => {
     req.connection?.remoteAddress ||
     'unknown';
   const payload = req.body?.auth || req.body || {};
-  const email = payload?.email?.trim()?.toLowerCase();
-  const cnpjAccess = payload?.cnpj_access ? normalizeCnpj(payload.cnpj_access) : null;
-  const userKey = email ? `${email}:${cnpjAccess || 'cnpj-unknown'}` : null;
+  const email =
+    payload?.email?.trim?.()?.toLowerCase() ||
+    payload?.login?.trim?.()?.toLowerCase() ||
+    payload?.usuario?.trim?.()?.toLowerCase();
 
   return {
     ipKey: `ip:${ip}`,
-    userKey: userKey ? `user:${userKey}` : null,
+    userKey: email ? `user:${email}` : null,
   };
 };
 
@@ -484,8 +485,15 @@ const loginHandler = async (req, res) => {
     console.log('[LOGIN_HIT]', { url: req.originalUrl, body: req.body });
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
+
+    const email = String(body?.email ?? body?.login ?? body?.usuario ?? '')
+      .trim()
+      .toLowerCase();
+    const password = String(body?.password ?? body?.senha ?? body?.pass ?? '');
+
     const email = String(body?.email ?? '').trim().toLowerCase();
     const password = String(body?.password ?? '');
+
 
     console.log('[LOGIN_DEBUG_INPUT]', {
       email,
