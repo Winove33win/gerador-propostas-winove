@@ -147,6 +147,7 @@ const safeQuery = async (sql, params = []) => {
 
 const assertUsersSchema = async () => {
   const REQUIRED = ['id', 'name', 'email', 'cnpj_access', 'password', 'role', 'created_at'];
+  const STRICT_SCHEMA = process.env.STRICT_SCHEMA === '1';
   if (!dbPool) {
     throw new Error('Banco de dados não configurado (variáveis de ambiente ausentes).');
   }
@@ -155,9 +156,9 @@ const assertUsersSchema = async () => {
   const names = new Set(cols.map((col) => col.Field));
   const missing = REQUIRED.filter((column) => !names.has(column));
   const extra = [...names].filter((column) => !REQUIRED.includes(column));
-  if (missing.length || extra.length) {
+  if (missing.length || (STRICT_SCHEMA && extra.length)) {
     console.error('[DB_SCHEMA_ERROR] users schema mismatch:', { missing, extra });
-    throw new Error('Users schema mismatch');
+    process.exit(1);
   }
   console.log('[DB_SCHEMA_OK] users schema valid');
 };
@@ -596,8 +597,6 @@ const loginHandler = async (req, res) => {
     console.log('[LOGIN_ATTEMPT]', {
       email,
       hasPassword: Boolean(password),
-      dbHost: process.env.DB_HOST,
-      dbName: process.env.DB_DATABASE,
     });
 
     if (!email || !password) {
