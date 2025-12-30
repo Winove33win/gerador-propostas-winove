@@ -494,7 +494,7 @@ const loginHandler = async (req, res) => {
       passLen: password?.length,
     });
 
-    if (!email || !normalizedCnpj || !password) {
+    if (!email || !password) {
       authRateLimitMetrics.failures += 1;
       const { ipKey, userKey } = getRateLimitKey(req);
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
@@ -526,21 +526,6 @@ const loginHandler = async (req, res) => {
         : null
     );
     if (!user) {
-      authRateLimitMetrics.failures += 1;
-      registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
-      registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
-      logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'invalid_credentials' });
-      return fail(res, 401, 'Credenciais inválidas.');
-    }
-
-    // valida CNPJ (tripla validação)
-    const cnpjDbNorm = String(user.cnpj_access || '').replace(/\D/g, '');
-    console.log('[LOGIN_DEBUG_CNPJ]', {
-      normalizedCnpj,
-      cnpjDbNorm,
-      match: normalizedCnpj === cnpjDbNorm,
-    });
-    if (cnpjDbNorm !== normalizedCnpj) {
       authRateLimitMetrics.failures += 1;
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'invalid_credentials');
       registerAuthFailure(authRateLimitStore.user, userKey, 'invalid_credentials');
