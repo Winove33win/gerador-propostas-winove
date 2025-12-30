@@ -39,6 +39,7 @@ const REGISTER_INVITE_TOKEN = process.env.REGISTER_INVITE_TOKEN;
 const ALLOW_PUBLIC_REGISTER = process.env.ALLOW_PUBLIC_REGISTER === 'true';
 const ENABLE_DB_INTROSPECTION = process.env.ENABLE_DB_INTROSPECTION === 'true';
 const DEBUG_TOKEN = process.env.DEBUG_TOKEN;
+const DEBUG_AUTH = process.env.DEBUG_AUTH === '1';
 
 if (envSummary.missingRequiredEnv.length > 0 || envSummary.missingDbEnv.length > 0) {
   console.error('[FATAL] Variáveis críticas ausentes.', {
@@ -113,6 +114,7 @@ if (NODE_ENV === 'production' && DB_HOST && net.isIP(DB_HOST) && !isPrivateIp(DB
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false }));
 app.use((req, _res, next) => {
   console.log(`[REQ] ${req.method} ${req.originalUrl}`);
   next();
@@ -345,6 +347,7 @@ const isAuthPayloadObject = (value) => {
 };
 
 const getAuthPayload = (req) => {
+
   // Prioriza req.body.auth quando for objeto válido com campos esperados ou JSON parseável;
   // se vier string inválida ou objeto vazio/inesperado, faz fallback para req.body.
   const rawAuth = req.body?.auth;
@@ -360,6 +363,21 @@ const getAuthPayload = (req) => {
         // fallback handled below
       }
       return req.body ?? {};
+
+  const raw = req.body?.auth ?? req.body ?? {};
+  if (typeof raw === 'string' || Buffer.isBuffer(raw)) {
+    const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : raw;
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      if (DEBUG_AUTH) {
+        console.error('[AUTH_PAYLOAD_PARSE_ERROR]', {
+          message: error?.message,
+          content_type: req.headers['content-type'] || null,
+        });
+      }
+      return {};
+
     }
 
     if (isAuthPayloadObject(rawAuth)) {
@@ -370,6 +388,14 @@ const getAuthPayload = (req) => {
   }
 
   return req.body ?? {};
+};
+
+const isBodyEmpty = (body) => {
+  if (body === undefined || body === null) return true;
+  if (Buffer.isBuffer(body)) return body.length === 0;
+  if (typeof body === 'string') return body.trim().length === 0;
+  if (typeof body === 'object') return Object.keys(body).length === 0;
+  return false;
 };
 
 const getRateLimitKey = (req) => {
@@ -551,7 +577,10 @@ const loginHandler = async (req, res) => {
 
     if (!email || !password) {
       recordAuthFailure(req, 'missing_credentials');
-      return fail(res, 400, 'Credenciais incompletas.');
+      return fail(res, 400, 'Credenciais incompletas.', {
+        content_type: req.headers['content-type'] || null,
+        body_empty: isBodyEmpty(req.body),
+      });
     }
     const { ipKey, userKey } = getRateLimitKey(req);
 
