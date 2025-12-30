@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
 };
 
 const API_BASE = '/api';
+const REGISTER_INVITE_TOKEN = import.meta.env?.VITE_REGISTER_INVITE_TOKEN ?? '';
 
 const isBrowser = typeof window !== 'undefined';
 
@@ -97,11 +98,10 @@ seed();
 
 export const db = {
   auth: {
-    login: (email: string, cnpj: string, password: string): User | null => {
+    login: (email: string, password: string): User | null => {
       const users = get<User>(STORAGE_KEYS.USERS);
       const user = users.find(u => 
-        u.email.toLowerCase() === email.toLowerCase() && 
-        u.cnpj_access.replace(/\D/g, '') === cnpj.replace(/\D/g, '') &&
+        u.email.toLowerCase() === email.toLowerCase() &&
         u.password === password
       );
       if (user) {
@@ -123,9 +123,13 @@ export const db = {
       const newItem = { ...data, id: crypto.randomUUID() };
       const updated = [...items, newItem];
       save(STORAGE_KEYS.USERS, updated);
-      void safeFetch('/auth/register', {
+      void safeFetch('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify(data)
+        headers: REGISTER_INVITE_TOKEN ? { 'x-invite-token': REGISTER_INVITE_TOKEN } : undefined,
+        body: JSON.stringify({
+          ...data,
+          ...(REGISTER_INVITE_TOKEN ? { invite_token: REGISTER_INVITE_TOKEN } : {})
+        })
       }).then(result => {
         if (!result.ok) {
           save(STORAGE_KEYS.USERS, items);

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api } from '../api.ts';
 import { Hexagon, Lock, Mail, Building2, AlertCircle, KeyRound, UserPlus, User as UserIcon, CheckCircle2 } from 'lucide-react';
 import { User } from '../types';
 
@@ -21,10 +21,12 @@ const LoginView: React.FC<Props> = ({ onLoginSuccess }) => {
 
   const handleLogin = async () => {
     try {
-      const user = await api.auth.login(email, cnpj, password);
+      const user = await api.auth.login(email, password);
       onLoginSuccess(user);
     } catch (error) {
-      setError('Credenciais inválidas. Verifique o e-mail, CNPJ e senha.');
+      const message =
+        error instanceof Error ? error.message : 'Não foi possível entrar. Tente novamente.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -129,20 +131,22 @@ const LoginView: React.FC<Props> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className={labelClasses}>CNPJ da Empresa</label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input 
-                  type="text" 
-                  required
-                  className={inputClasses}
-                  placeholder="00.000.000/0001-00"
-                  value={cnpj}
-                  onChange={e => setCnpj(e.target.value)}
-                />
+            {isRegistering && (
+              <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
+                <label className={labelClasses}>CNPJ da Empresa</label>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                  <input
+                    type="text"
+                    required
+                    className={inputClasses}
+                    placeholder="00.000.000/0001-00"
+                    value={cnpj}
+                    onChange={e => setCnpj(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               <label className={labelClasses}>Senha</label>

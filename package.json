@@ -7,18 +7,19 @@
     "dev": "vite",
     "build": "vite build",
     "start": "node Backend/server.js",
+    "hash-legacy-passwords": "node Backend/scripts/hash-legacy-passwords.js",
     "preview": "vite preview"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.11.5",
+    "jspdf": "^2.5.1",
     "lucide-react": "^0.562.0",
+    "mysql2": "^3.11.5",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "jspdf": "^2.5.1"
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

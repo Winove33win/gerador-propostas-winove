@@ -1,7 +1,7 @@
 
 import { jsPDF } from 'jspdf';
 import { Proposal, Client, Company, Service, Term } from '../types';
-import { api } from '../api';
+import { api } from '../api.ts';
 
 export const generateProposalPDF = async (proposal: Proposal) => {
   const doc = new jsPDF();

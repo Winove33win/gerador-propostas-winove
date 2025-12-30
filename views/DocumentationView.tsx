@@ -77,6 +77,26 @@ const DocumentationView: React.FC = () => {
                 <span className="font-mono text-slate-400 text-xs">/httpdocs (root da aplicação)</span>
               </div>
             </div>
+            <div className="mt-8 rounded-2xl border border-blue-500/30 bg-blue-900/40 p-5 text-xs text-blue-100 leading-relaxed">
+              <div className="font-black uppercase tracking-widest text-[10px] text-blue-300">Nota operacional</div>
+              <p className="mt-3">
+                No Plesk, mantenha o gerenciamento do processo ativo apenas pelo painel. Antes de
+                executar qualquer <span className="font-mono">npm run start</span> manual, pare o processo
+                existente e volte a iniciar pelo Plesk para evitar conflitos de porta.
+              </p>
+              <p className="mt-3">
+                A porta é fornecida pela variável <span className="font-mono">PORT</span> do Plesk e o
+                backend já consome <span className="font-mono">process.env.PORT</span>. Se houver outro
+                serviço usando a porta, ajuste o <span className="font-mono">PORT</span> no painel ou
+                libere a porta ocupada.
+              </p>
+              <p className="mt-3">
+                Sem Plesk, mantenha o banco local usando <span className="font-mono">DB_HOST=127.0.0.1</span>
+                (ou <span className="font-mono">localhost</span>) e garanta que o usuário do MySQL tenha
+                grants para <span className="font-mono">localhost</span>. Isso elimina o warning e evita
+                falhas de conexão por <span className="font-mono">bind-address</span> ou firewall.
+              </p>
+            </div>
           </div>
 
           <div className="bg-white border-2 border-slate-100 rounded-3xl p-8 shadow-sm">
@@ -87,7 +107,7 @@ const DocumentationView: React.FC = () => {
             <div className="space-y-3">
               {[
                 { k: 'NODE_ENV', v: 'production' },
-                { k: 'PORT', v: '3000' },
+                { k: 'PORT', v: 'definido pelo Plesk' },
                 { k: 'APP_URL', v: 'http://controle.winove.com.br' },
                 { k: 'DB_HOST', v: 'localhost' },
                 { k: 'DB_PORT', v: '3306' }
@@ -139,7 +159,7 @@ const DocumentationView: React.FC = () => {
 CREATE TABLE users (
   id CHAR(36) PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
-  email VARCHAR(100) UNIQUE NOT NULL,
+  login VARCHAR(100) UNIQUE NOT NULL,
   cnpj_access VARCHAR(18) NOT NULL, -- Chave de segurança tripla
   password VARCHAR(255) NOT NULL,
   role ENUM('admin', 'employee') DEFAULT 'employee',
@@ -154,7 +174,6 @@ CREATE TABLE clients (
   address TEXT,
   person_name VARCHAR(100),
   job_title VARCHAR(100),
-  email VARCHAR(100),
   phone VARCHAR(20)
 );
 
@@ -207,15 +226,14 @@ CREATE TABLE proposal_terms (
                <Key size={48} />
             </div>
             <div className="space-y-4">
-              <h4 className="text-2xl font-black">Algoritmo de Tripla Validação</h4>
+              <h4 className="text-2xl font-black">Autenticação por E-mail e Senha</h4>
               <p className="text-blue-100 leading-relaxed">
-                Para mitigar acessos indevidos em ambiente de produção, o sistema não utiliza apenas e-mail e senha. 
-                Cada requisição de login deve conter o <b>CNPJ da Unidade de Negócio</b> vinculada ao colaborador.
+                O login utiliza apenas <b>e-mail profissional</b> e <b>senha criptografada</b>.
+                O CNPJ é informado no cadastro do colaborador e permanece associado ao usuário.
               </p>
               <div className="flex flex-wrap gap-4 pt-2">
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: E-mail Profissional</span>
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: CNPJ da Empresa</span>
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 3: Senha Criptografada</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: Identificador Profissional</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: Senha Criptografada</span>
               </div>
             </div>
           </div>
@@ -229,8 +247,8 @@ CREATE TABLE proposal_terms (
             </h4>
             <div className="divide-y divide-slate-100 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               {[
-                { m: 'POST', p: '/auth/login', d: 'Autenticação tripla e geração de JWT' },
-                { m: 'POST', p: '/auth/register', d: 'Criação de novos colaboradores (Employee)' },
+                { m: 'POST', p: '/auth/login', d: 'Autenticação por e-mail e senha e geração de JWT' },
+                { m: 'POST', p: '/api/auth/register', d: 'Criação de novos colaboradores (Employee)' },
                 { m: 'GET', p: '/clients', d: 'Listagem de clientes para o Wizard' },
                 { m: 'POST', p: '/proposals', d: 'Persistência de nova proposta comercial' },
                 { m: 'GET', p: '/proposals/:id/pdf', d: 'Engine de renderização jsPDF Winove' },
@@ -255,8 +273,7 @@ CREATE TABLE proposal_terms (
                <pre className="text-blue-300 font-mono text-[11px] leading-relaxed">
 {`{
   "auth": {
-    "email": "contato@winove.com.br",
-    "cnpj_access": "29.900.423/0001-40",
+    "email": "usuario@empresa.com",
     "password": "**************"
   },
   "context": {
