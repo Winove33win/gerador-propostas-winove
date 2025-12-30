@@ -347,8 +347,6 @@ const getRateLimitKey = (req) => {
 
   const payload = getAuthPayload(req);
 
-  const payload = req.body?.auth || req.body || {};
-
   const email =
     payload?.email?.trim?.()?.toLowerCase() ||
     payload?.login?.trim?.()?.toLowerCase() ||
@@ -503,18 +501,10 @@ const loginHandler = async (req, res) => {
 
     const body = getAuthPayload(req);
 
-    const body = req.body?.auth || req.body || {};
-
-
     const email = String(body?.email ?? body?.login ?? body?.usuario ?? '')
       .trim()
       .toLowerCase();
     const password = String(body?.password ?? body?.senha ?? body?.pass ?? '');
-
-
-
-    const email = String(body?.email ?? '').trim().toLowerCase();
-    const password = String(body?.password ?? '');
 
 
     console.log('[LOGIN_DEBUG_INPUT]', {
