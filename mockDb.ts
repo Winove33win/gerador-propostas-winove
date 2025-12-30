@@ -98,11 +98,10 @@ seed();
 
 export const db = {
   auth: {
-    login: (email: string, cnpj: string, password: string): User | null => {
+    login: (email: string, password: string): User | null => {
       const users = get<User>(STORAGE_KEYS.USERS);
       const user = users.find(u => 
-        u.email.toLowerCase() === email.toLowerCase() && 
-        u.cnpj_access.replace(/\D/g, '') === cnpj.replace(/\D/g, '') &&
+        u.email.toLowerCase() === email.toLowerCase() &&
         u.password === password
       );
       if (user) {
