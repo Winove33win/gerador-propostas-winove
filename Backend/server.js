@@ -476,11 +476,11 @@ const loginHandler = async (req, res) => {
     console.log('[LOGIN_HIT]', { url: req.originalUrl, body: req.body });
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
-    const email = body?.email?.trim()?.toLowerCase();
-    const cnpjAccess = body?.cnpj_access;
-    const passwordRaw = body?.password;
+    const email = String(body?.email ?? '').trim().toLowerCase();
+    const normalizedCnpj = normalizeCnpj(body?.cnpj_access ?? '');
+    const password = String(body?.password ?? '');
 
-    if (!email || !cnpjAccess || !passwordRaw) {
+    if (!email || !normalizedCnpj || !password) {
       authRateLimitMetrics.failures += 1;
       const { ipKey, userKey } = getRateLimitKey(req);
       registerAuthFailure(authRateLimitStore.ip, ipKey, 'missing_credentials');
@@ -488,8 +488,6 @@ const loginHandler = async (req, res) => {
       logAuthRateLimitMetrics('failure', { ipKey, userKey, reason: 'missing_credentials' });
       return fail(res, 400, 'Credenciais incompletas.');
     }
-
-    const normalizedCnpj = normalizeCnpj(cnpjAccess);
     const { ipKey, userKey } = getRateLimitKey(req);
 
     // busca usuário por email
@@ -519,7 +517,7 @@ const loginHandler = async (req, res) => {
       return fail(res, 401, 'Credenciais inválidas.');
     }
 
-    // valida senha (somente bcrypt)
+    // valida senha (bcryptjs)
     const stored = user.password || '';
     if (!isBcryptHash(stored)) {
       authRateLimitMetrics.failures += 1;
@@ -530,22 +528,19 @@ const loginHandler = async (req, res) => {
     }
 
     console.log('[LOGIN] email JSON:', JSON.stringify(email));
-    console.log('[LOGIN] password typeof:', typeof passwordRaw);
-    console.log('[LOGIN] password raw JSON:', JSON.stringify(passwordRaw));
-    console.log(
-      '[LOGIN] password raw len:',
-      passwordRaw ? String(passwordRaw).length : null
-    );
-
-    const password = String(passwordRaw || '').trim();
-
-    console.log('[LOGIN] password trimmed JSON:', JSON.stringify(password));
-    console.log('[LOGIN] password trimmed len:', password.length);
+    console.log('[LOGIN] password typeof:', typeof password);
+    console.log('[LOGIN] password raw JSON:', JSON.stringify(password));
+    console.log('[LOGIN] password raw len:', password.length);
     console.log('[LOGIN] hash len:', String(stored).length);
     console.log('[LOGIN] hash JSON:', JSON.stringify(stored));
-
     const okPass = await bcrypt.compare(password, stored);
-    console.log('[LOGIN] bcrypt match:', okPass);
+    console.log('LOGIN DEBUG', {
+      email,
+      cnpj: normalizedCnpj,
+      password,
+      passwordFromDb: stored,
+      bcryptResult: okPass,
+    });
 
     if (!okPass) {
       authRateLimitMetrics.failures += 1;
