@@ -226,15 +226,14 @@ CREATE TABLE proposal_terms (
                <Key size={48} />
             </div>
             <div className="space-y-4">
-              <h4 className="text-2xl font-black">Algoritmo de Tripla Validação</h4>
+              <h4 className="text-2xl font-black">Autenticação por E-mail e Senha</h4>
               <p className="text-blue-100 leading-relaxed">
-                Para mitigar acessos indevidos em ambiente de produção, o sistema não utiliza apenas identificador e senha. 
-                Cada requisição de login deve conter o <b>CNPJ da Unidade de Negócio</b> vinculada ao colaborador.
+                O login utiliza apenas <b>e-mail profissional</b> e <b>senha criptografada</b>.
+                O CNPJ é informado no cadastro do colaborador e permanece associado ao usuário.
               </p>
               <div className="flex flex-wrap gap-4 pt-2">
                 <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 1: Identificador Profissional</span>
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: CNPJ da Empresa</span>
-                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 3: Senha Criptografada</span>
+                <span className="bg-white/10 px-4 py-2 rounded-xl text-xs font-bold border border-white/20">Fator 2: Senha Criptografada</span>
               </div>
             </div>
           </div>
@@ -248,7 +247,7 @@ CREATE TABLE proposal_terms (
             </h4>
             <div className="divide-y divide-slate-100 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
               {[
-                { m: 'POST', p: '/auth/login', d: 'Autenticação tripla e geração de JWT' },
+                { m: 'POST', p: '/auth/login', d: 'Autenticação por e-mail e senha e geração de JWT' },
                 { m: 'POST', p: '/api/auth/register', d: 'Criação de novos colaboradores (Employee)' },
                 { m: 'GET', p: '/clients', d: 'Listagem de clientes para o Wizard' },
                 { m: 'POST', p: '/proposals', d: 'Persistência de nova proposta comercial' },
@@ -274,8 +273,7 @@ CREATE TABLE proposal_terms (
                <pre className="text-blue-300 font-mono text-[11px] leading-relaxed">
 {`{
   "auth": {
-    "login": "usuario.profissional",
-    "cnpj_access": "29.900.423/0001-40",
+    "email": "usuario@empresa.com",
     "password": "**************"
   },
   "context": {

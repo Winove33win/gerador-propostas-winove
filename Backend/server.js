@@ -485,12 +485,10 @@ const loginHandler = async (req, res) => {
     authRateLimitMetrics.attempts += 1;
     const body = req.body?.auth || req.body || {};
     const email = String(body?.email ?? '').trim().toLowerCase();
-    const normalizedCnpj = normalizeCnpj(body?.cnpj_access ?? '');
     const password = String(body?.password ?? '');
 
     console.log('[LOGIN_DEBUG_INPUT]', {
       email,
-      normalizedCnpj,
       passLen: password?.length,
     });
 
