@@ -170,6 +170,8 @@ const serializeJsonArray = (value) => {
 const isBcryptHash = (v = '') =>
   v.startsWith('$2a$') || v.startsWith('$2b$') || v.startsWith('$2y$');
 
+const isBcryptHashValid = (v = '') => isBcryptHash(v) && v.length === 60;
+
 const isInactiveUser = (user) => {
   if (!user) return true;
   const status = user.status;
@@ -346,8 +348,27 @@ const isAuthPayloadObject = (value) => {
   return keys.some((key) => AUTH_PAYLOAD_FIELDS.has(key));
 };
 
-const getAuthPayload = (req) => {
+const normalizeAuthPayload = (payload = {}) => {
+  const source = payload ?? {};
+  const emailRaw = source?.email ?? source?.login ?? source?.usuario ?? '';
+  const passwordRaw = source?.password ?? source?.senha ?? source?.pass ?? '';
+  const email = String(emailRaw).trim().toLowerCase();
+  const password = String(passwordRaw);
+  const deprecatedKeys = [];
 
+  if (source?.login !== undefined) deprecatedKeys.push('login');
+  if (source?.usuario !== undefined) deprecatedKeys.push('usuario');
+  if (source?.senha !== undefined) deprecatedKeys.push('senha');
+  if (source?.pass !== undefined) deprecatedKeys.push('pass');
+
+  return {
+    email,
+    password,
+    deprecatedKeys,
+  };
+};
+
+const getAuthPayload = (req) => {
   // Prioriza req.body.auth quando for objeto válido com campos esperados ou JSON parseável;
   // se vier string inválida ou objeto vazio/inesperado, faz fallback para req.body.
   const rawAuth = req.body?.auth;
@@ -363,6 +384,12 @@ const getAuthPayload = (req) => {
         // fallback handled below
       }
       return req.body ?? {};
+    }
+
+    if (isAuthPayloadObject(rawAuth)) {
+      return rawAuth;
+    }
+  }
 
   const raw = req.body?.auth ?? req.body ?? {};
   if (typeof raw === 'string' || Buffer.isBuffer(raw)) {
@@ -377,14 +404,11 @@ const getAuthPayload = (req) => {
         });
       }
       return {};
-
     }
+  }
 
-    if (isAuthPayloadObject(rawAuth)) {
-      return rawAuth;
-    }
-
-    return req.body ?? {};
+  if (isAuthPayloadObject(raw)) {
+    return raw;
   }
 
   return req.body ?? {};
@@ -408,10 +432,7 @@ const getRateLimitKey = (req) => {
 
   const payload = getAuthPayload(req);
 
-  const email =
-    payload?.email?.trim?.()?.toLowerCase() ||
-    payload?.login?.trim?.()?.toLowerCase() ||
-    payload?.usuario?.trim?.()?.toLowerCase();
+  const { email } = normalizeAuthPayload(payload);
 
   return {
     ipKey: `ip:${ip}`,
@@ -570,10 +591,14 @@ const loginHandler = async (req, res) => {
 
     const body = getAuthPayload(req);
 
-    const email = String(body?.email ?? body?.login ?? body?.usuario ?? '')
-      .trim()
-      .toLowerCase();
-    const password = String(body?.password ?? body?.senha ?? body?.pass ?? '');
+    const { email, password, deprecatedKeys } = normalizeAuthPayload(body);
+
+    if (deprecatedKeys.length > 0) {
+      console.warn('[AUTH_DEPRECATED_PAYLOAD_KEYS]', {
+        keys: deprecatedKeys,
+        ip: req.ip,
+      });
+    }
 
     if (!email || !password) {
       recordAuthFailure(req, 'missing_credentials');
@@ -605,12 +630,29 @@ const loginHandler = async (req, res) => {
     }
 
     // valida senha (bcryptjs)
-    const stored = user.password || '';
+    const stored = String(user.password || '');
+    const storedTrimmed = stored.trim();
     let bcryptOk = false;
 
-    if (isBcryptHash(stored)) {
-      bcryptOk = await bcrypt.compare(password, stored);
-    } else if (stored && stored === password) {
+    if (isBcryptHash(storedTrimmed)) {
+      if (DEBUG_AUTH) {
+        console.info('[LOGIN_DEBUG]', {
+          email,
+          hasUser: Boolean(user),
+          hashLen: storedTrimmed.length,
+          hashPrefix: storedTrimmed.slice(0, 7),
+          passLen: password.length,
+        });
+      }
+      if (!isBcryptHashValid(storedTrimmed)) {
+        console.warn('[AUTH_BCRYPT_INVALID_HASH]', {
+          userId: user.id,
+          length: storedTrimmed.length,
+          prefix: storedTrimmed.slice(0, 4),
+        });
+      }
+      bcryptOk = await bcrypt.compare(password, storedTrimmed);
+    } else if (storedTrimmed && storedTrimmed === password) {
       const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
       await safeQuery('UPDATE users SET password = ? WHERE id = ?', [passwordHash, user.id]);
       bcryptOk = true;
